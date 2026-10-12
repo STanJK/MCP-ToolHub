@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import { McpServer } from "@modelcontextprotocol/server";
 import { loadEnabledModules } from "./modules.mjs";
 
+const actionIdPattern = /^[a-z0-9][a-z0-9_]*$/;
+
 function toolName(moduleId, actionId) {
   return `${moduleId.replaceAll("-", "_")}_${actionId}`;
 }
@@ -19,8 +21,8 @@ export async function createToolHubServer(toolHubConfig) {
 
   for (const loaded of modules) {
     for (const action of loaded.descriptor.actions) {
-      if (!action?.id || typeof action.id !== "string") {
-        throw new Error(`Module ${loaded.id} has an action without an id`);
+      if (!action?.id || typeof action.id !== "string" || !actionIdPattern.test(action.id)) {
+        throw new Error(`Module ${loaded.id} has an invalid action id`);
       }
 
       server.registerTool(
