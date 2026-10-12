@@ -1,255 +1,236 @@
 # MCP-ToolHub
 
-A narrow local capability broker for exposing **named, pre-approved project tasks** to MCP clients without exposing a general-purpose shell.
+A small local MCP capability broker. The first module is **Local Build**: remote callers may select a configured project and a configured operation, but they never receive a general-purpose shell.
 
-The intended remote path is:
+## Architecture
 
 ```text
 ChatGPT / Codex / Responses API
         |
-        | MCP via OpenAI-hosted tunnel
         v
 OpenAI Secure MCP Tunnel
         |
-        | outbound-only HTTPS
         v
-openai/tunnel-client  (runs locally)
-        |
+official openai/tunnel-client
         | stdio MCP
         v
-MCP-ToolHub
-        |
-        | local allowlist only
-        +--> project A: build / test / lint / status
-        +--> project B: build / test / ...
+ToolHub Core
+        | Module API v1
+        v
+Local Build
+        | local YAML bridge
+        v
+fixed project root + fixed process mapping
 ```
 
-## Design rule
-
-**MCP-ToolHub is not Remote PowerShell.**
-
-Remote callers can only select:
-
-- a configured project ID;
-- a configured task ID.
-
-They cannot provide:
-
-- an arbitrary command;
-- arbitrary command arguments;
-- an arbitrary working directory;
-- shell operators such as `|`, `>`, `&&`;
-- an arbitrary PowerShell script body.
-
-Every executable, argument and project root is defined in a local manifest that is not committed to Git.
-
-## Tunnel: use the official implementation
-
-This repository intentionally does **not** implement a reverse tunnel.
-
-Use OpenAI's official [`openai/tunnel-client`](https://github.com/openai/tunnel-client) for the transport layer. It already supports:
-
-- outbound-only HTTPS to the OpenAI tunnel control plane;
-- stdio and Streamable HTTP MCP backends;
-- streaming MCP notifications;
-- health, readiness, metrics and a local admin UI;
-- Windows, Linux and macOS release binaries;
-- release checksums and provenance.
-
-MCP-ToolHub only implements the local capability boundary.
+The tunnel layer is not reimplemented here. MCP-ToolHub uses OpenAI's official `openai/tunnel-client`.
 
 ## Requirements
 
 - Node.js 20+
 - npm
-- Windows PowerShell 5.1+ or PowerShell 7+ for the helper scripts
-- an OpenAI Secure MCP Tunnel ID and runtime API key when using the OpenAI tunnel
+- Windows PowerShell 5.1+ or PowerShell 7+ for helper scripts
+- an OpenAI Secure MCP Tunnel ID and runtime API key when using Tunnel
 
-## Quick start: local MCP only
+## Configuration
+
+There are two local configuration layers.
+
+### 1. ToolHub config
+
+Copy:
+
+```powershell
+Copy-Item .\toolhub.example.yaml .\toolhub.local.yaml
+```
+
+Example:
+
+```yaml
+version: 1
+
+tunnel:
+  name: main
+  id: tunnel_0123456789abcdef0123456789abcdef
+  raw_key: sk-replace-me
+
+modules:
+  local-build:
+    enabled: true
+    config: ./modules/local-build/local-build.local.yaml
+```
+
+`toolhub.local.yaml` is gitignored. For v0.1 the raw runtime key is intentionally stored directly in this local file; a credential provider can replace this later.
+
+### 2. Local Build bridge
+
+Copy:
+
+```powershell
+Copy-Item .\modules\local-build\local-build.example.yaml .\modules\local-build\local-build.local.yaml
+```
+
+Example:
+
+```yaml
+version: 1
+
+defaults:
+  timeout_ms: 900000
+  max_output_kb: 1024
+
+projects:
+  HalluCine:
+    description: HalluCine workspace
+    root: 'C:\STanJK\Development\HalluCine'
+
+    operations:
+      check:
+        program: cargo.exe
+        args:
+          - check
+          - --workspace
+
+      build:
+        program: cargo.exe
+        args:
+          - build
+          - --workspace
+
+      frontend-build:
+        cwd: app\gui
+        program: npm.cmd
+        args:
+          - run
+          - build
+```
+
+`operations` is the allowlist. If an operation is not present, it cannot be requested remotely.
+
+Remote callers cannot provide executable paths, argv, cwd, shell text, project roots, or arbitrary environment variables.
+
+Local Build always launches configured operations with:
+
+```text
+spawn(program, args, { shell: false })
+```
+
+An optional operation `cwd` must be relative and must resolve inside the configured project root.
+
+## Local Build MCP tools
+
+The module exposes:
+
+- `local_build_list_projects`
+- `local_build_list_operations`
+- `local_build_run`
+
+The only remote execution selection is equivalent to:
+
+```json
+{
+  "project": "HalluCine",
+  "operation": "build"
+}
+```
+
+The bridge YAML maps that pair to the actual local process.
+
+## Local setup
 
 ```powershell
 git clone https://github.com/STanJK/MCP-ToolHub.git
 cd MCP-ToolHub
 npm install
-Copy-Item .\toolhub.example.json .\toolhub.local.json
-notepad .\toolhub.local.json
-npm start
+
+Copy-Item .\toolhub.example.yaml .\toolhub.local.yaml
+Copy-Item .\modules\local-build\local-build.example.yaml .\modules\local-build\local-build.local.yaml
+
+notepad .\toolhub.local.yaml
+notepad .\modules\local-build\local-build.local.yaml
 ```
 
-The server uses stdio, so it will wait for an MCP client on stdin.
-
-To test with MCP Inspector:
+For local stdio MCP testing:
 
 ```powershell
 npx @modelcontextprotocol/inspector node .\src\index.mjs
 ```
 
-## Configure projects and tasks
-
-`toolhub.local.json` is deliberately gitignored.
-
-Example:
-
-```json
-{
-  "projects": {
-    "example": {
-      "description": "Example local project",
-      "root": "C:\\Development\\ExampleProject",
-      "tasks": {
-        "status": {
-          "description": "Show git status",
-          "program": "git.exe",
-          "args": ["status", "--short", "--branch"]
-        },
-        "build": {
-          "description": "Run the project's checked-in build wrapper",
-          "program": "powershell.exe",
-          "args": [
-            "-NoProfile",
-            "-NonInteractive",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-File",
-            ".toolhub\\build.ps1"
-          ],
-          "timeoutMs": 900000
-        }
-      }
-    }
-  }
-}
-```
-
-A remote MCP caller sees only `example` and task names such as `status` and `build`.
-
-## MCP tools
-
-### `list_projects`
-
-Lists project IDs and descriptions. Local filesystem paths are not exposed.
-
-### `list_tasks`
-
-Input:
-
-```json
-{ "project": "example" }
-```
-
-Lists the named tasks available for that project.
-
-### `run_task`
-
-Input:
-
-```json
-{
-  "project": "example",
-  "task": "build"
-}
-```
-
-The server resolves that pair through the local manifest and launches the configured executable with Node's `spawn(..., { shell: false })`.
-
-Only one task may execute per project at a time.
-
 ## OpenAI Secure MCP Tunnel
 
-### 1. Install the official tunnel client
-
-The helper script downloads the **latest official GitHub release**, verifies its SHA-256 against the release's `SHA256SUMS.txt`, and installs only the local binary under `.toolhub/bin/`.
+Install the official tunnel client release and verify its SHA-256:
 
 ```powershell
 .\scripts\bootstrap-tunnel.ps1
 ```
 
-Nothing from the tunnel client is vendored into this repository.
-
-### 2. Install ToolHub dependencies
+Create the official stdio tunnel-client profile from `toolhub.local.yaml`:
 
 ```powershell
-npm install
+.\scripts\init-tunnel.ps1
 ```
 
-### 3. Create the local ToolHub manifest
+Run it:
 
 ```powershell
-Copy-Item .\toolhub.example.json .\toolhub.local.json
-notepad .\toolhub.local.json
-```
-
-### 4. Initialize an OpenAI tunnel profile
-
-Set the tunnel runtime key in the environment first:
-
-```powershell
-$env:CONTROL_PLANE_API_KEY = "sk-..."
-```
-
-Then initialize the profile:
-
-```powershell
-.\scripts\init-tunnel.ps1 -TunnelId "tunnel_..."
-```
-
-The helper configures the official tunnel client to launch:
-
-```text
-node <repo>\src\index.mjs
-```
-
-as its local stdio MCP backend.
-
-### 5. Run
-
-```powershell
-$env:CONTROL_PLANE_API_KEY = "sk-..."
 .\scripts\run-tunnel.ps1
 ```
 
-The run helper passes the absolute `toolhub.local.json` path to the stdio child through `TOOLHUB_CONFIG`, runs `tunnel-client doctor`, then starts the official client.
+The helper scripts read `tunnel.name`, `tunnel.id`, and `tunnel.raw_key` from the local ToolHub YAML. `raw_key` is injected into `CONTROL_PLANE_API_KEY` for the official tunnel client.
 
-## Security boundary
+## Module API v1
 
-The important boundary is local and declarative:
+Modules live at:
 
 ```text
-remote tool call
-    |
-    | project ID + task ID only
-    v
-toolhub.local.json
-    |
-    | fixed program + fixed args + fixed cwd
-    v
-spawn(shell = false)
+modules/<module-id>/index.mjs
 ```
 
-For a stronger boundary, run the tunnel client and ToolHub under a dedicated low-privilege Windows account whose NTFS ACLs only permit the intended workspaces.
+and implement only:
 
-Do not put credentials in task arguments. Prefer environment variables, OS credential stores, or project-local mechanisms appropriate to the tool being launched.
+```text
+describe()
+invoke(action, input, context)
+```
+
+Core converts module actions to MCP tools. See `docs/MODULE_API.md` for the exact v1 contract.
 
 ## Repository layout
 
 ```text
 src/
-  index.mjs                    MCP capability broker
+  index.mjs
+  core/
+    config.mjs
+    config-cli.mjs
+    modules.mjs
+    server.mjs
+
+modules/
+  local-build/
+    index.mjs
+    local-build.example.yaml
+    local-build.local.yaml      # gitignored
+
 scripts/
-  bootstrap-tunnel.ps1         fetch + verify official tunnel-client
-  init-tunnel.ps1              create an official tunnel profile
-  run-tunnel.ps1               doctor + run the profile
+  bootstrap-tunnel.ps1
+  init-tunnel.ps1
+  run-tunnel.ps1
+
 docs/
-  ARCHITECTURE.md              trust boundaries and design notes
-toolhub.example.json           tracked example manifest
-toolhub.local.json             local manifest; gitignored
+  ARCHITECTURE.md
+  MODULE_API.md
+
+toolhub.example.yaml
+toolhub.local.yaml              # gitignored
 ```
 
-## Upstream references
+## Security direction
 
+The current application boundary is a local declarative allowlist. For stronger isolation later, run ToolHub and `tunnel-client.exe` under a dedicated low-privilege Windows account with NTFS access only to explicitly exposed project roots.
+
+## Upstream
+
+- OpenAI tunnel client: https://github.com/openai/tunnel-client
 - OpenAI Secure MCP Tunnel guide: https://developers.openai.com/api/docs/guides/secure-mcp-tunnels
-- Official tunnel client: https://github.com/openai/tunnel-client
-- Official tunnel wire protocol: https://github.com/openai/tunnel-client/blob/master/docs/protocol.md
-- MCP TypeScript server SDK: https://github.com/modelcontextprotocol/typescript-sdk
-
-The initial integration targets the current public OpenAI tunnel-client and MCP TypeScript v2 interfaces. No copy of the OpenAI tunnel protocol implementation is maintained here.
+- MCP TypeScript SDK: https://github.com/modelcontextprotocol/typescript-sdk
