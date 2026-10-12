@@ -105,6 +105,13 @@ function runOperation(config, projectId, project, operationId, operation) {
     const cwd = resolveWorkingDirectory(project, operation);
 
     runningProjects.add(projectId);
+    let projectLockHeld = true;
+    const releaseProjectLock = () => {
+      if (!projectLockHeld) return;
+      projectLockHeld = false;
+      runningProjects.delete(projectId);
+    };
+
     const startedAt = Date.now();
 
     const stdoutState = {
@@ -140,26 +147,47 @@ function runOperation(config, projectId, project, operationId, operation) {
       }
     };
 
-    const child = spawn(operation.program, operation.args ?? [], {
-      cwd,
-      shell: false,
-      windowsHide: true,
-      env: process.env
-    });
+    let child;
+    try {
+      child = spawn(operation.program, operation.args ?? [], {
+        cwd,
+        shell: false,
+        windowsHide: true,
+        env: process.env
+      });
+    } catch (error) {
+      appendBounded(stderrState, error instanceof Error ? error.message : String(error));
+      releaseProjectLock();
+
+      resolve({
+        ok: false,
+        status: "spawn_error",
+        project: projectId,
+        operation: operationId,
+        exit_code: null,
+        stdout: stdoutState.buffer.toString("utf8"),
+        stdout_truncated: stdoutState.truncated,
+        stdout_bytes_seen: stdoutState.bytesSeen,
+        stdout_bytes_returned: stdoutState.buffer.length,
+        stderr: stderrState.buffer.toString("utf8"),
+        stderr_truncated: stderrState.truncated,
+        stderr_bytes_seen: stderrState.bytesSeen,
+        stderr_bytes_returned: stderrState.buffer.length,
+        duration_ms: Date.now() - startedAt,
+        timed_out: false
+      });
+      return;
+    }
 
     child.stdout?.on("data", (chunk) => { appendBounded(stdoutState, chunk); });
     child.stderr?.on("data", (chunk) => { appendBounded(stderrState, chunk); });
 
-    const timer = setTimeout(() => {
-      timedOut = true;
-      child.kill();
-    }, timeoutMs);
-
+    let timer;
     const finish = (exitCode, spawnError) => {
       if (finished) return;
       finished = true;
-      clearTimeout(timer);
-      runningProjects.delete(projectId);
+      if (timer) clearTimeout(timer);
+      releaseProjectLock();
 
       if (spawnError) appendBounded(stderrState, spawnError.message);
 
@@ -181,6 +209,15 @@ function runOperation(config, projectId, project, operationId, operation) {
         timed_out: timedOut
       });
     };
+
+    timer = setTimeout(() => {
+      timedOut = true;
+      try {
+        child.kill();
+      } catch (error) {
+        finish(null, error instanceof Error ? error : new Error(String(error)));
+      }
+    }, timeoutMs);
 
     child.on("error", (error) => finish(null, error));
     child.on("close", (code) => finish(code, null));
