@@ -99,6 +99,55 @@ projects:
           - status
           - --recursive
 
+
+      # Local mutation boundary:
+      # - worktree + index changes are allowed
+      # - no network operations
+      # - no commit/ref/history mutations
+
+      git-add-all:
+        description: Stage all tracked and untracked worktree changes
+        program: git.exe
+        args:
+          - add
+          - -A
+
+      git-add-update:
+        description: Stage modifications and deletions of tracked files only
+        program: git.exe
+        args:
+          - add
+          - -u
+
+      git-unstage-all:
+        description: Unstage all staged changes while preserving the worktree
+        program: git.exe
+        args:
+          - restore
+          - --staged
+          - .
+
+      git-restore-all:
+        description: Discard all unstaged tracked-file changes in the worktree
+        program: git.exe
+        args:
+          - restore
+          - .
+
+      git-clean-preview:
+        description: Preview deletion of untracked files and directories
+        program: git.exe
+        args:
+          - clean
+          - -nd
+
+      git-clean-untracked:
+        description: Delete untracked files and directories; ignored files are preserved
+        program: git.exe
+        args:
+          - clean
+          - -fd
+
       check:
         description: Cargo workspace check
         program: cargo.exe
