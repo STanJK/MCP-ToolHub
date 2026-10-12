@@ -33,8 +33,8 @@ export async function loadEnabledModules(toolHubConfig) {
     }
 
     const descriptor = await instance.describe();
-    if (!descriptor || descriptor.id !== moduleId || !Array.isArray(descriptor.actions)) {
-      throw new Error(`Module ${moduleId} returned an invalid descriptor`);
+    if (!descriptor || descriptor.id !== moduleId || descriptor.version !== 1 || !Array.isArray(descriptor.actions)) {
+      throw new Error(`Module ${moduleId} returned an invalid Module API v1 descriptor`);
     }
 
     loaded.push({ id: moduleId, configPath, instance, descriptor });
