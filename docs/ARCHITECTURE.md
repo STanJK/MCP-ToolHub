@@ -1,53 +1,119 @@
 # Architecture
 
-## Scope
+## Layers
 
-MCP-ToolHub solves one narrow problem: allow an MCP client to invoke a small set of named local development tasks without exposing a general-purpose shell.
+```text
+OpenAI product
+    |
+    v
+OpenAI Secure MCP Tunnel
+    |
+    v
+official openai/tunnel-client
+    |
+    | stdio MCP
+    v
+ToolHub Core
+    |
+    | Module API v1
+    v
+Local Build
+    |
+    | bridge config
+    v
+project workspace + fixed operation
+```
 
-It does not implement a network tunnel. Remote connectivity is delegated to OpenAI's official `openai/tunnel-client`.
+MCP-ToolHub does not implement the tunnel protocol. Transport is delegated to OpenAI's official `openai/tunnel-client`.
 
-## Trust boundary
+## Configuration split
 
-Remote input is limited to two identifiers:
+### ToolHub configuration
 
-- `project`
-- `task`
+`toolhub.local.yaml` owns:
 
-The local `toolhub.local.json` resolves those identifiers to a fixed project root, executable and argument vector. The process is launched with `shell: false`.
+- tunnel alias;
+- tunnel ID;
+- current raw runtime key;
+- enabled module registry;
+- each module's local config path.
 
-The remote caller cannot directly choose:
+It is local-only and gitignored.
 
-- executable path;
-- command text;
-- command arguments;
-- working directory;
-- arbitrary environment variables.
+### Module bridge configuration
 
-## Why no home-grown tunnel
+Each module owns its own local configuration.
 
-OpenAI's official tunnel client already implements authenticated outbound HTTPS polling, MCP stdio forwarding, Streamable HTTP forwarding, streaming notifications, health/readiness, metrics, diagnostics and supported Windows release artifacts.
+For Local Build:
 
-Reimplementing the tunnel would increase attack surface and maintenance cost without strengthening the local capability boundary.
+```text
+modules/local-build/local-build.local.yaml
+```
+
+This file owns:
+
+- project IDs;
+- absolute workspace roots;
+- allowlisted operation IDs;
+- fixed executable;
+- fixed argv;
+- optional relative cwd;
+- timeout/output limits.
+
+## Capability boundary
+
+Remote Local Build input is limited to:
+
+```json
+{
+  "project": "HalluCine",
+  "operation": "build"
+}
+```
+
+The caller cannot directly choose:
+
+- executable;
+- argv;
+- shell text;
+- cwd;
+- environment variables;
+- project root.
+
+The bridge resolves the pair locally and calls Node `spawn(..., { shell: false })`.
+
+## Workspace boundary
+
+A project's root is absolute.
+
+An operation may optionally provide a relative `cwd`. Before execution, Local Build resolves it against the project root and rejects any path that escapes the root.
+
+Therefore a bridge entry such as:
+
+```yaml
+root: 'C:\Development\Example'
+cwd: app\gui
+```
+
+is allowed, while absolute or parent-traversal cwd values that resolve outside the project root are rejected.
 
 ## Runtime model
 
-Only one task may run per configured project at a time. Different projects can run independently.
+Local Build allows at most one running operation per project. Different projects may run concurrently.
 
-Task stdout and stderr are bounded before returning them over MCP.
+Bridge YAML is read on each invocation, so project/operation edits take effect without restarting ToolHub.
 
-## Recommended Windows hardening
+stdout and stderr are bounded before being returned through MCP.
 
-For a stronger second boundary, run both `tunnel-client.exe` and ToolHub under a dedicated low-privilege local account. Grant that account only the NTFS rights required for explicitly exposed project roots.
+## Credential state
 
-This gives two independent controls:
+v0.1 intentionally permits:
 
-1. MCP allowlist: only named project/task pairs are callable.
-2. Windows ACLs: even a ToolHub bug cannot access unrelated workspaces if the process identity lacks permission.
+```yaml
+tunnel:
+  raw_key: sk-...
+```
 
-## Upstream transport
+inside the local gitignored ToolHub config.
 
-The intended transport chain is:
-
-`OpenAI product -> Secure MCP Tunnel -> openai/tunnel-client -> stdio -> MCP-ToolHub`
-
-The official tunnel client's `sample_mcp_stdio_local` profile is used as the integration path.
+A later credential-provider layer can replace this field without changing Module API v1 or Local Build bridge semantics.
