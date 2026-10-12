@@ -18,8 +18,9 @@ if ($LASTEXITCODE -ne 0) {
 
 $tunnel = $tunnelJson | ConvertFrom-Json
 $env:CONTROL_PLANE_API_KEY = $tunnel.raw_key
-$server = Join-Path $repoRoot "src\index.mjs"
-$command = "node `"$server`""
+$server = (Join-Path $repoRoot "src\index.mjs")
+$serverForCommand = $server -replace "\\", "/"
+$command = "node `"$serverForCommand`""
 
 & $client init --sample sample_mcp_stdio_local --profile $tunnel.name --tunnel-id $tunnel.id --mcp-command $command
 if ($LASTEXITCODE -ne 0) {
