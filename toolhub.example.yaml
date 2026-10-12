@@ -1,0 +1,11 @@
+version: 1
+
+tunnel:
+  name: main
+  id: tunnel_0123456789abcdef0123456789abcdef
+  raw_key: sk-replace-me
+
+modules:
+  local-build:
+    enabled: true
+    config: ./modules/local-build/local-build.local.yaml
