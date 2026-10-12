@@ -1,0 +1,41 @@
+version: 1
+
+defaults:
+  timeout_ms: 900000
+  max_output_kb: 1024
+
+projects:
+  example:
+    description: Example project
+    root: 'C:\Development\ExampleProject'
+
+    operations:
+      status:
+        description: Show git status
+        program: git.exe
+        args:
+          - status
+          - --short
+          - --branch
+
+      check:
+        description: Cargo workspace check
+        program: cargo.exe
+        args:
+          - check
+          - --workspace
+
+      build:
+        description: Cargo workspace build
+        program: cargo.exe
+        args:
+          - build
+          - --workspace
+
+      frontend-build:
+        description: Build frontend from a project subdirectory
+        cwd: app\gui
+        program: npm.cmd
+        args:
+          - run
+          - build
