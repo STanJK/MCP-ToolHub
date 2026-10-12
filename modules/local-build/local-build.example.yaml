@@ -11,12 +11,93 @@ projects:
 
     operations:
       status:
-        description: Show git status
+        description: Show concise git status and branch
         program: git.exe
         args:
           - status
           - --short
           - --branch
+
+      status-full:
+        description: Show full git status
+        program: git.exe
+        args:
+          - status
+
+      git-diff:
+        description: Show unstaged git diff
+        program: git.exe
+        args:
+          - diff
+          - --no-ext-diff
+
+      git-diff-staged:
+        description: Show staged git diff
+        program: git.exe
+        args:
+          - diff
+          - --cached
+          - --no-ext-diff
+
+      git-diff-stat:
+        description: Show unstaged git diff summary
+        program: git.exe
+        args:
+          - diff
+          - --stat
+
+      git-log:
+        description: Show recent commit graph
+        program: git.exe
+        args:
+          - log
+          - --oneline
+          - --decorate
+          - --graph
+          - --all
+          - -n
+          - '40'
+
+      git-branch:
+        description: Show local and remote branches
+        program: git.exe
+        args:
+          - branch
+          - --all
+          - --verbose
+          - --no-abbrev
+
+      git-remotes:
+        description: Show configured git remotes
+        program: git.exe
+        args:
+          - remote
+          - -v
+
+      git-head:
+        description: Show current HEAD commit
+        program: git.exe
+        args:
+          - show
+          - --no-patch
+          - --decorate
+          - --stat
+          - --oneline
+          - HEAD
+
+      git-files:
+        description: List tracked files
+        program: git.exe
+        args:
+          - ls-files
+
+      git-submodules:
+        description: Show recursive submodule status
+        program: git.exe
+        args:
+          - submodule
+          - status
+          - --recursive
 
       check:
         description: Cargo workspace check
