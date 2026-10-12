@@ -1,0 +1,22 @@
+{
+  "projects": {
+    "example": {
+      "description": "Example local project",
+      "root": "C:\\Development\\ExampleProject",
+      "tasks": {
+        "status": {
+          "description": "Show git status",
+          "program": "git.exe",
+          "args": ["status", "--short", "--branch"],
+          "timeoutMs": 30000
+        },
+        "build": {
+          "description": "Run a checked-in project build wrapper",
+          "program": "powershell.exe",
+          "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", ".toolhub\\build.ps1"],
+          "timeoutMs": 900000
+        }
+      }
+    }
+  }
+}
