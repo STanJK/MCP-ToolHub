@@ -1,6 +1,5 @@
 node_modules/
 .toolhub/
 toolhub.local.yaml
-toolhub.local.json
 modules/*/*.local.yaml
 *.log
