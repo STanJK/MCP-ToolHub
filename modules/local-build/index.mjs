@@ -85,7 +85,13 @@ function runOperation(config, projectId, project, operationId, operation) {
         operation: operationId,
         exit_code: null,
         stdout: "",
+        stdout_truncated: false,
+        stdout_bytes_seen: 0,
+        stdout_bytes_returned: 0,
         stderr: `Project ${projectId} already has a running operation`,
+        stderr_truncated: false,
+        stderr_bytes_seen: Buffer.byteLength(`Project ${projectId} already has a running operation`, "utf8"),
+        stderr_bytes_returned: Buffer.byteLength(`Project ${projectId} already has a running operation`, "utf8"),
         duration_ms: 0,
         timed_out: false
       });
@@ -95,20 +101,43 @@ function runOperation(config, projectId, project, operationId, operation) {
     const defaults = config.defaults ?? {};
     const timeoutMs = positiveInteger(operation.timeout_ms, positiveInteger(defaults.timeout_ms, 900000));
     const maxOutputKb = positiveInteger(operation.max_output_kb, positiveInteger(defaults.max_output_kb, 1024));
-    const maxOutputChars = maxOutputKb * 1024;
+    const maxOutputBytes = maxOutputKb * 1024;
     const cwd = resolveWorkingDirectory(project, operation);
 
     runningProjects.add(projectId);
     const startedAt = Date.now();
 
-    let stdout = "";
-    let stderr = "";
+    const stdoutState = {
+      buffer: Buffer.alloc(0),
+      bytesSeen: 0,
+      truncated: false
+    };
+    const stderrState = {
+      buffer: Buffer.alloc(0),
+      bytesSeen: 0,
+      truncated: false
+    };
+
     let timedOut = false;
     let finished = false;
 
-    const appendBounded = (current, chunk) => {
-      const next = current + chunk.toString("utf8");
-      return next.length > maxOutputChars ? next.slice(next.length - maxOutputChars) : next;
+    const appendBounded = (state, chunk) => {
+      const nextChunk = Buffer.isBuffer(chunk)
+        ? chunk
+        : Buffer.from(String(chunk), "utf8");
+
+      state.bytesSeen += nextChunk.length;
+
+      const combined = state.buffer.length === 0
+        ? nextChunk
+        : Buffer.concat([state.buffer, nextChunk]);
+
+      if (combined.length > maxOutputBytes) {
+        state.buffer = combined.subarray(combined.length - maxOutputBytes);
+        state.truncated = true;
+      } else {
+        state.buffer = combined;
+      }
     };
 
     const child = spawn(operation.program, operation.args ?? [], {
@@ -118,8 +147,8 @@ function runOperation(config, projectId, project, operationId, operation) {
       env: process.env
     });
 
-    child.stdout?.on("data", (chunk) => { stdout = appendBounded(stdout, chunk); });
-    child.stderr?.on("data", (chunk) => { stderr = appendBounded(stderr, chunk); });
+    child.stdout?.on("data", (chunk) => { appendBounded(stdoutState, chunk); });
+    child.stderr?.on("data", (chunk) => { appendBounded(stderrState, chunk); });
 
     const timer = setTimeout(() => {
       timedOut = true;
@@ -132,7 +161,7 @@ function runOperation(config, projectId, project, operationId, operation) {
       clearTimeout(timer);
       runningProjects.delete(projectId);
 
-      if (spawnError) stderr = appendBounded(stderr, spawnError.message);
+      if (spawnError) appendBounded(stderrState, spawnError.message);
 
       resolve({
         ok: !spawnError && !timedOut && exitCode === 0,
@@ -140,8 +169,14 @@ function runOperation(config, projectId, project, operationId, operation) {
         project: projectId,
         operation: operationId,
         exit_code: exitCode,
-        stdout,
-        stderr,
+        stdout: stdoutState.buffer.toString("utf8"),
+        stdout_truncated: stdoutState.truncated,
+        stdout_bytes_seen: stdoutState.bytesSeen,
+        stdout_bytes_returned: stdoutState.buffer.length,
+        stderr: stderrState.buffer.toString("utf8"),
+        stderr_truncated: stderrState.truncated,
+        stderr_bytes_seen: stderrState.bytesSeen,
+        stderr_bytes_returned: stderrState.buffer.length,
         duration_ms: Date.now() - startedAt,
         timed_out: timedOut
       });
