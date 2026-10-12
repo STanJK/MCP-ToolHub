@@ -117,6 +117,27 @@ spawn(program, args, { shell: false })
 
 An optional operation `cwd` must be relative and must resolve inside the configured project root.
 
+### Output retention
+
+`max_output_kb` is enforced independently for stdout and stderr using UTF-8 byte counts. If a stream exceeds the configured limit, Local Build keeps the **tail** of that stream and reports the truncation explicitly.
+
+A run result includes:
+
+```json
+{
+  "stdout": "...",
+  "stdout_truncated": false,
+  "stdout_bytes_seen": 128,
+  "stdout_bytes_returned": 128,
+  "stderr": "...",
+  "stderr_truncated": false,
+  "stderr_bytes_seen": 0,
+  "stderr_bytes_returned": 0
+}
+```
+
+When `stdout_truncated` or `stderr_truncated` is `true`, the corresponding text is only the retained tail rather than the complete stream.
+
 ## Local Build MCP tools
 
 The module exposes:
