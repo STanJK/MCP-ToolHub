@@ -145,17 +145,35 @@ The module exposes:
 - `local_build_list_projects`
 - `local_build_list_operations`
 - `local_build_run`
+- `local_build_get_run`
+- `local_build_list_runs`
+- `local_build_cancel_run`
 
-The only remote execution selection is equivalent to:
+`local_build_run` starts a configured operation and returns immediately with a `run_id`:
 
 ```json
 {
+  "ok": true,
+  "run_id": "run_...",
+  "status": "running",
   "project": "HalluCine",
-  "operation": "build"
+  "operation": "cargo-build"
 }
 ```
 
-The bridge YAML maps that pair to the actual local process.
+Long-running work is polled separately:
+
+```json
+{
+  "run_id": "run_..."
+}
+```
+
+with `local_build_get_run`. This keeps the local process lifecycle independent from any individual Tunnel request deadline.
+
+At most one active job may exist per project. A busy response includes the current `active_run_id`.
+
+On Windows, `local_build_cancel_run` uses `taskkill /PID <pid> /T /F` so the process tree is terminated rather than only the immediate parent process.
 
 ## Local setup
 
