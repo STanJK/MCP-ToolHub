@@ -5,11 +5,12 @@ import path from "node:path";
 import process from "node:process";
 import { parse } from "yaml";
 import { z } from "zod";
+import { runGitSyncGenerated } from "./builtins/git-sync-generated.mjs";
 
 const jobs = new Map();
 const activeJobByProject = new Map();
 const MAX_RETAINED_TERMINAL_JOBS = 16;
-const TERMINAL_STATUSES = new Set(["completed", "spawn_error", "cancelled", "timed_out"]);
+const TERMINAL_STATUSES = new Set(["completed", "spawn_error", "cancelled", "timed_out", "refused", "failed"]);
 
 async function loadBridgeConfig(configPath) {
   const raw = await readFile(configPath, "utf8");
@@ -46,9 +47,24 @@ function getProject(config, projectId) {
 function getOperation(project, operationId) {
   const operation = project.operations[operationId];
   if (!operation) throw new Error(`Unknown operation: ${operationId}`);
-  if (typeof operation.program !== "string" || operation.program.length === 0) {
-    throw new Error(`Operation ${operationId} is missing program`);
+
+  const hasProgram = typeof operation.program === "string" && operation.program.length > 0;
+  const hasBuiltin = typeof operation.builtin === "string" && operation.builtin.length > 0;
+
+  if (hasProgram === hasBuiltin) {
+    throw new Error(`Operation ${operationId} must define exactly one of program or builtin`);
   }
+
+  if (hasBuiltin) {
+    if (operation.builtin !== "git-sync-generated") {
+      throw new Error(`Operation ${operationId} uses unsupported builtin: ${operation.builtin}`);
+    }
+    if (operation.args !== undefined || operation.cwd !== undefined || operation.program !== undefined) {
+      throw new Error(`Builtin operation ${operationId} cannot define program, args, or cwd`);
+    }
+    return operation;
+  }
+
   if (operation.args !== undefined && !Array.isArray(operation.args)) {
     throw new Error(`Operation ${operationId} args must be an array`);
   }
@@ -176,7 +192,8 @@ function jobSnapshot(job, includeOutput = true) {
     duration_ms: now - job.startedAt,
     timed_out: job.timedOut,
     cancel_requested: job.cancelRequested,
-    cancel_reason: job.cancelReason ?? null
+    cancel_reason: job.cancelReason ?? null,
+    message: job.message ?? null
   };
 
   if (includeOutput) {
@@ -217,6 +234,16 @@ function requestCancellation(job, reason) {
 
   const child = job.child;
   if (!child || !job.pid) {
+    if (job.builtin) {
+      return {
+        ok: true,
+        status: job.status,
+        run_id: job.runId,
+        project: job.project,
+        operation: job.operation
+      };
+    }
+
     markCancelFailure(job, "process handle is unavailable");
     return {
       ok: false,
@@ -276,6 +303,76 @@ function requestCancellation(job, reason) {
   };
 }
 
+
+function finalizeBuiltinJob(job, result) {
+  if (isTerminal(job)) return;
+
+  if (job.timeoutTimer) {
+    clearTimeout(job.timeoutTimer);
+    job.timeoutTimer = null;
+  }
+
+  job.completedAt = Date.now();
+  job.child = null;
+  job.pid = null;
+  job.message = result?.message ?? null;
+  job.exitCode = result?.exitCode ?? null;
+
+  if (job.timedOut) {
+    job.status = "timed_out";
+  } else if (job.cancelRequested) {
+    job.status = "cancelled";
+  } else {
+    job.status = result?.status ?? "failed";
+  }
+
+  if (job.message) {
+    appendBounded(
+      job.stderrState,
+      `\n[ToolHub builtin] ${job.status}: ${job.message}\n`,
+      job.maxOutputBytes
+    );
+  }
+
+  releaseProject(job);
+  pruneTerminalJobs();
+}
+
+function startBuiltinOperation(job, cwd) {
+  job.status = "running";
+
+  job.timeoutTimer = setTimeout(() => {
+    if (isTerminal(job)) return;
+    job.timedOut = true;
+    requestCancellation(job, "timeout");
+  }, job.timeoutMs);
+
+  queueMicrotask(async () => {
+    try {
+      const result = await runGitSyncGenerated({
+        cwd,
+        isCancelled: () => job.cancelRequested,
+        onChild: (child) => {
+          job.child = child;
+          job.pid = child?.pid ?? null;
+        },
+        onStdout: (chunk) => appendBounded(job.stdoutState, chunk, job.maxOutputBytes),
+        onStderr: (chunk) => appendBounded(job.stderrState, chunk, job.maxOutputBytes),
+        onLog: (message) => appendBounded(job.stdoutState, message, job.maxOutputBytes)
+      });
+      finalizeBuiltinJob(job, result);
+    } catch (error) {
+      finalizeBuiltinJob(job, {
+        status: "failed",
+        exitCode: 1,
+        message: error instanceof Error ? error.message : String(error)
+      });
+    }
+  });
+
+  return jobSnapshot(job);
+}
+
 function startOperation(config, projectId, project, operationId, operation) {
   const existingRunId = activeJobByProject.get(projectId);
   if (existingRunId) {
@@ -317,12 +414,18 @@ function startOperation(config, projectId, project, operationId, operation) {
     cancelRequested: false,
     cancelReason: null,
     spawnError: null,
+    builtin: operation.builtin ?? null,
+    message: null,
     stdoutState: createOutputState(),
     stderrState: createOutputState()
   };
 
   jobs.set(runId, job);
   activeJobByProject.set(projectId, runId);
+
+  if (operation.builtin === "git-sync-generated") {
+    return startBuiltinOperation(job, cwd);
+  }
 
   let child;
   try {
