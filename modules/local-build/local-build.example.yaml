@@ -39,6 +39,13 @@ projects:
           - build
           - --workspace
 
+      cargo-test:
+        description: Cargo workspace test
+        program: cargo.exe
+        args:
+          - test
+          - --workspace
+
       frontend-npm-build:
         description: Build frontend from a project subdirectory
         cwd: app\gui
