@@ -99,11 +99,25 @@ is allowed, while absolute or parent-traversal cwd values that resolve outside t
 
 ## Runtime model
 
-Local Build allows at most one running operation per project. Different projects may run concurrently.
+Local Build uses asynchronous in-process jobs.
 
-Bridge YAML is read on each invocation, so project/operation edits take effect without restarting ToolHub.
+`run` only starts the configured process and returns a `run_id`. The process may continue after that MCP request has completed. Clients use `get_run` to poll status/output and `cancel_run` to request termination.
 
-stdout and stderr are bounded before being returned through MCP.
+This deliberately separates:
+
+```text
+Tunnel request lifetime
+!=
+local build/test process lifetime
+```
+
+Local Build allows at most one active job per project. Different projects may run concurrently.
+
+On Windows, cancellation terminates the full process tree with `taskkill /T /F`.
+
+Completed jobs are retained in memory for recent inspection; retained stdout/stderr stay bounded by the configured output limit.
+
+Bridge YAML is read when a new operation is started, so project/operation edits take effect without restarting ToolHub.
 
 ## Credential state
 
