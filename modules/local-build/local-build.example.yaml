@@ -25,26 +25,33 @@ projects:
           - pull
           - --ff-only
 
+      git-sync-generated:
+        description: Safely replace a locally dirty Cargo.lock with an incoming origin/main Cargo.lock and fast-forward
+        builtin: git-sync-generated
+
       cargo-check:
-        description: Cargo workspace check
+        description: Cargo workspace check with locked dependency resolution
         program: cargo.exe
         args:
           - check
           - --workspace
+          - --locked
 
       cargo-build:
-        description: Cargo workspace build
+        description: Cargo workspace build with locked dependency resolution
         program: cargo.exe
         args:
           - build
           - --workspace
+          - --locked
 
       cargo-test:
-        description: Cargo workspace test
+        description: Cargo workspace test with locked dependency resolution
         program: cargo.exe
         args:
           - test
           - --workspace
+          - --locked
 
       frontend-npm-build:
         description: Build frontend from a project subdirectory
