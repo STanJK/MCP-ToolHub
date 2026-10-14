@@ -107,6 +107,40 @@ projects:
 
 `operations` is the allowlist. If an operation is not present, it cannot be requested remotely.
 
+### Cargo locked verification
+
+The default Cargo examples use `--locked`:
+
+```text
+cargo check --workspace --locked
+cargo build --workspace --locked
+cargo test  --workspace --locked
+```
+
+These operations are verification capabilities: if `Cargo.toml` and `Cargo.lock` disagree, Cargo fails instead of rewriting the local lockfile.
+
+### Safe generated-state synchronization
+
+Local Build also supports one narrow builtin:
+
+```yaml
+git-sync-generated:
+  description: Safely replace a locally dirty Cargo.lock with an incoming origin/main Cargo.lock and fast-forward
+  builtin: git-sync-generated
+```
+
+This is not a general Git reset/restore capability. It is hard-coded to `Cargo.lock`, `main`, and `origin/main`, and fails closed unless all of these are true:
+
+1. `git fetch origin` succeeds.
+2. The current branch is exactly `main`.
+3. There are no staged changes.
+4. The complete visible worktree change set is exactly one unstaged `Cargo.lock` modification.
+5. `origin/main` is a fast-forward descendant of local `HEAD`.
+6. `HEAD..origin/main` contains an incoming `Cargo.lock` change.
+
+Only then does it restore the local `Cargo.lock` from `HEAD`, fast-forward to `origin/main`, and require the final `git status --porcelain` to be clean.
+
+
 Remote callers cannot provide executable paths, argv, cwd, shell text, project roots, or arbitrary environment variables.
 
 Local Build always launches configured operations with:
