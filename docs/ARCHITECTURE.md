@@ -119,6 +119,25 @@ Completed jobs are retained in memory for recent inspection; retained stdout/std
 
 Bridge YAML is read when a new operation is started, so project/operation edits take effect without restarting ToolHub.
 
+## Builtin capability boundary
+
+Most Local Build operations are fixed `program + args` mappings. A builtin is permitted only when its semantics need multiple fail-closed checks that cannot be represented safely as one process invocation.
+
+The first builtin is `git-sync-generated`. Its semantics are intentionally fixed in code:
+
+- remote: `origin`;
+- branch: `main`;
+- generated file: `Cargo.lock`;
+- no staged changes;
+- no other visible worktree changes;
+- only fast-forward synchronization;
+- incoming remote state must itself modify `Cargo.lock`;
+- final worktree must be clean.
+
+The builtin accepts no remote path, command, branch, remote, or file argument. YAML may only opt a project into that exact capability with `builtin: git-sync-generated`.
+
+Cargo verification operations should use `--locked` so normal check/build/test execution never rewrites dependency resolution state.
+
 ## Credential state
 
 v0.1 intentionally permits:
