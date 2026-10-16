@@ -229,6 +229,63 @@ For local stdio MCP testing:
 npx @modelcontextprotocol/inspector node .\src\index.mjs
 ```
 
+## JLCEDA Pro / 嘉立创 EDA official MCP proxy
+
+ToolHub can aggregate the MCP server built into JLCEDA Pro desktop client V4.1.60+.
+
+```text
+ChatGPT
+  -> OpenAI Secure MCP Tunnel
+  -> MCP-ToolHub
+  -> @modelcontextprotocol/client (stdio)
+  -> lceda-pro --mcp stdio
+  -> JLCEDA Pro local bridge
+  -> active editor session
+```
+
+ToolHub does not reimplement the editor protocol or JLCEDA WebSocket bridge. It launches the official MCP server as a child process, discovers its tools with `tools/list`, mirrors each upstream JSON input schema, and forwards `tools/call` results as native MCP results.
+
+Create the local module config:
+
+```powershell
+Copy-Item .\modules\lceda-pro\lceda-pro.example.yaml .\modules\lceda-pro\lceda-pro.local.yaml
+```
+
+Example:
+
+```yaml
+version: 1
+command: lceda-pro
+args:
+  - --mcp
+  - stdio
+allow_tools:
+  - '*'
+deny_tools: []
+```
+
+If the executable is not on PATH, use an absolute path such as:
+
+```yaml
+command: 'C:/Program Files/lceda-pro/lceda-pro.exe'
+```
+
+Then enable it in `toolhub.local.yaml`:
+
+```yaml
+modules:
+  local-build:
+    enabled: true
+    config: ./modules/local-build/local-build.local.yaml
+
+  lceda-pro:
+    enabled: true
+    config: ./modules/lceda-pro/lceda-pro.local.yaml
+```
+
+`allow_tools: ['*']` is an explicit trust decision: it mirrors the complete official MCP surface exposed by the installed JLCEDA Pro version, including editor-changing operations and any generic invocation capability. Replace `*` with exact upstream tool names to narrow the surface, and/or use `deny_tools`.
+
+The upstream tool catalog is discovered when ToolHub starts. After changing the JLCEDA client version or tool policy, restart ToolHub and refresh the ChatGPT connector so the new tool catalog is discovered.
 ## OpenAI Secure MCP Tunnel
 
 Install the official tunnel client release and verify its SHA-256:
