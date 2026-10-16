@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { McpServer } from "@modelcontextprotocol/server";
+import { McpServer, fromJsonSchema } from "@modelcontextprotocol/server";
 import { loadEnabledModules } from "./modules.mjs";
 
 const actionIdPattern = /^[a-z0-9][a-z0-9_]*$/;
@@ -25,12 +25,17 @@ export async function createToolHubServer(toolHubConfig) {
         throw new Error(`Module ${loaded.id} has an invalid action id`);
       }
 
+      const inputSchema = action.inputJsonSchema
+        ? fromJsonSchema(action.inputJsonSchema)
+        : (action.inputSchema ?? {});
+
       server.registerTool(
         toolName(loaded.id, action.id),
         {
           title: action.title ?? `${loaded.id}: ${action.id}`,
           description: action.description ?? "",
-          inputSchema: action.inputSchema ?? {}
+          inputSchema,
+          annotations: action.annotations
         },
         async (input) => {
           try {
@@ -39,6 +44,9 @@ export async function createToolHubServer(toolHubConfig) {
               configPath: loaded.configPath,
               requestId: randomUUID()
             });
+            if (action.resultMode === "mcp") {
+              return result;
+            }
             return toMcpResult(result);
           } catch (error) {
             return toMcpResult({
