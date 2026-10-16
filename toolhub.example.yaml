@@ -9,3 +9,7 @@ modules:
   local-build:
     enabled: true
     config: ./modules/local-build/local-build.local.yaml
+
+  lceda-pro:
+    enabled: false
+    config: ./modules/lceda-pro/lceda-pro.local.yaml
