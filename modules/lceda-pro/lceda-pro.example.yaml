@@ -1,0 +1,19 @@
+version: 1
+
+# The official JLCEDA Pro desktop client V4.1.60+ provides the MCP server.
+# If lceda-pro is not on PATH, use for example:
+# command: 'C:/Program Files/lceda-pro/lceda-pro.exe'
+command: lceda-pro
+
+args:
+  - --mcp
+  - stdio
+
+# This is an explicit local trust decision.
+# "*" proxies the full official MCP surface, including editor-changing tools
+# and any generic invoke capability the installed lceda-pro version exposes.
+# Replace "*" with exact upstream tool names to narrow the surface.
+allow_tools:
+  - '*'
+
+deny_tools: []
