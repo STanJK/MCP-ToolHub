@@ -3,6 +3,8 @@ import { Client } from "@modelcontextprotocol/client";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import { parse } from "yaml";
 
+const runtimes = new Map();
+
 function normalizeActionId(name) {
   let id = String(name)
     .toLowerCase()
@@ -44,18 +46,25 @@ function toolAllowed(name, config) {
   return config.allowTools.includes("*") || config.allowTools.includes(name);
 }
 
-export default async function createLcedaProModule({ moduleId, configPath }) {
-  const config = await loadConfig(configPath);
+function runtimeKey(configPath, config) {
+  return JSON.stringify({
+    configPath,
+    command: config.command,
+    args: config.args,
+    allowTools: config.allowTools,
+    denyTools: config.denyTools
+  });
+}
+
+function createRuntime(config) {
   let client = null;
-  let transport = null;
   let connecting = null;
+  let actions = null;
   const upstreamByAction = new Map();
-  let descriptor = null;
 
   async function closeClient() {
     const current = client;
     client = null;
-    transport = null;
     if (current) {
       try { await current.close(); } catch {}
     }
@@ -70,14 +79,13 @@ export default async function createLcedaProModule({ moduleId, configPath }) {
         name: "mcp-toolhub-lceda-pro-proxy",
         version: "0.1.0"
       });
-      const nextTransport = new StdioClientTransport({
+      const transport = new StdioClientTransport({
         command: config.command,
         args: config.args
       });
       try {
-        await nextClient.connect(nextTransport);
+        await nextClient.connect(transport);
         client = nextClient;
-        transport = nextTransport;
         return nextClient;
       } catch (error) {
         try { await nextClient.close(); } catch {}
@@ -91,11 +99,12 @@ export default async function createLcedaProModule({ moduleId, configPath }) {
   }
 
   async function discover() {
+    if (actions) return actions;
     const mcp = await ensureConnected();
     const listed = await mcp.listTools();
     upstreamByAction.clear();
     const used = new Set();
-    const actions = [];
+    const discovered = [];
 
     for (const tool of listed.tools ?? []) {
       if (!toolAllowed(tool.name, config)) continue;
@@ -109,7 +118,7 @@ export default async function createLcedaProModule({ moduleId, configPath }) {
       used.add(actionId);
       upstreamByAction.set(actionId, tool.name);
 
-      actions.push({
+      discovered.push({
         id: actionId,
         title: tool.title ?? `JLCEDA Pro: ${tool.name}`,
         description: `[Official lceda-pro MCP: ${tool.name}] ${tool.description ?? ""}`.trim(),
@@ -119,32 +128,30 @@ export default async function createLcedaProModule({ moduleId, configPath }) {
       });
     }
 
-    if (actions.length === 0) {
+    if (discovered.length === 0) {
       throw new Error("lceda-pro MCP exposed no tools permitted by allow_tools");
     }
 
-    descriptor = { id: moduleId, version: 1, actions };
-    return descriptor;
+    actions = discovered;
+    return actions;
   }
 
-  async function callUpstream(action, input) {
+  async function invoke(action, input) {
+    await discover();
     const upstreamName = upstreamByAction.get(action);
     if (!upstreamName) throw new Error(`Unknown proxied lceda-pro action: ${action}`);
 
-    const invoke = async () => {
+    const call = async () => {
       const mcp = await ensureConnected();
-      return await mcp.callTool({
-        name: upstreamName,
-        arguments: input ?? {}
-      });
+      return await mcp.callTool({ name: upstreamName, arguments: input ?? {} });
     };
 
     try {
-      return await invoke();
+      return await call();
     } catch (firstError) {
       await closeClient();
       try {
-        return await invoke();
+        return await call();
       } catch (secondError) {
         const first = firstError instanceof Error ? firstError.message : String(firstError);
         const second = secondError instanceof Error ? secondError.message : String(secondError);
@@ -153,12 +160,28 @@ export default async function createLcedaProModule({ moduleId, configPath }) {
     }
   }
 
+  return { discover, invoke };
+}
+
+export default async function createLcedaProModule({ moduleId, configPath }) {
+  const config = await loadConfig(configPath);
+  const key = runtimeKey(configPath, config);
+  let runtime = runtimes.get(key);
+  if (!runtime) {
+    runtime = createRuntime(config);
+    runtimes.set(key, runtime);
+  }
+
   return {
     async describe() {
-      return descriptor ?? await discover();
+      return {
+        id: moduleId,
+        version: 1,
+        actions: await runtime.discover()
+      };
     },
     async invoke(action, input) {
-      return await callUpstream(action, input);
+      return await runtime.invoke(action, input);
     }
   };
 }
