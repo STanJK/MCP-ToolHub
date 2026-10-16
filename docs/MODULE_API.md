@@ -49,6 +49,25 @@ local-build + run
 local_build_run
 ```
 
+## MCP proxy actions
+
+Module API v1 also supports a narrow proxy extension for modules that aggregate another MCP server.
+
+An action may provide an upstream JSON Schema directly:
+
+```js
+{
+  id: "upstream_tool",
+  inputJsonSchema: upstreamTool.inputSchema,
+  resultMode: "mcp"
+}
+```
+
+Core wraps `inputJsonSchema` with the MCP SDK's `fromJsonSchema()`, so the upstream schema is advertised and validated without translating it into Zod manually.
+
+When `resultMode: "mcp"` is set, `invoke()` returns a standard MCP `CallToolResult` and Core forwards it directly instead of wrapping it in ToolHub JSON-text convention. This preserves native MCP content blocks and structured content.
+
+This extension is used by the `lceda-pro` module to proxy the official JLCEDA Pro MCP server.
 ## invoke()
 
 ```js
