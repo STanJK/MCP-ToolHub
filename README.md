@@ -400,17 +400,16 @@ The upstream project currently recommends the official Hex-Rays IDA MCP server f
 See `docs/IDA_PRO_MCP.md` for the exact runtime and trust model.
 ## Remote MCP proxy
 
-ToolHub can forward a remote Streamable HTTP MCP server through the existing ChatGPT Connector:
+`remote-mcp` is a generic multi-server forwarding module. ToolHub stays behind the existing Secure MCP Tunnel; each named server profile points to one remote Streamable HTTP MCP endpoint.
 
 ```text
 ChatGPT cloud
   -> OpenAI Secure MCP Tunnel
   -> MCP-ToolHub
-  -> fixed HTTPS MCP URL + static headers
-  -> remote MCP server
+     -> remote-mcp / sleeprecord-server -> remote MCP
+     -> remote-mcp / nas-server         -> remote MCP
+     -> remote-mcp / lab-server         -> remote MCP
 ```
-
-The remote URL, credentials, and tool allowlist are local configuration. The remote model cannot change them.
 
 Create the local config:
 
@@ -423,19 +422,47 @@ Example:
 
 ```yaml
 version: 1
-url: 'https://mcp.example.com/mcp'
 
-headers:
-  Authorization:
-    env: TOOLHUB_REMOTE_MCP_TOKEN
-    prefix: 'Bearer '
+servers:
+  sleeprecord-server:
+    enabled: true
+    url: 'https://sleep.example.com/mcp'
 
-allow_tools:
-  - '*'
-deny_tools: []
+    headers:
+      Authorization:
+        env: TOOLHUB_SLEEPRECORD_TOKEN
+        prefix: 'Bearer '
+
+    allow_tools:
+      - '*'
+    deny_tools: []
+
+  another-server:
+    enabled: false
+    url: 'https://another.example.com/mcp'
+    headers:
+      X-API-Key:
+        env: TOOLHUB_ANOTHER_SERVER_API_KEY
+    allow_tools:
+      - '*'
+    deny_tools: []
 ```
 
-Custom static validation can use any fixed header names, with secret values sourced from environment variables. HTTPS is required unless `allow_insecure_http: true` is explicitly set for a trusted LAN/dev endpoint.
+Server IDs are local static capability names. They must match:
+
+```text
+[a-z0-9][a-z0-9-]*
+```
+
+If `sleeprecord-server` exposes an upstream tool called `get_sleep_summary`, ChatGPT sees:
+
+```text
+remote_mcp_sleeprecord_server_get_sleep_summary
+```
+
+The remote caller cannot choose an arbitrary URL or authentication header. URL, headers, credentials, and allow/deny policy are all local ToolHub configuration.
+
+HTTPS is required by default; `allow_insecure_http: true` is an explicit opt-in for trusted LAN/dev endpoints.
 
 See `docs/REMOTE_MCP.md`.
 ## OpenAI Secure MCP Tunnel
