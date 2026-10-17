@@ -138,6 +138,22 @@ The builtin accepts no remote path, command, branch, remote, or file argument. Y
 
 Cargo verification operations should use `--locked` so normal check/build/test execution never rewrites dependency resolution state.
 
+## Child MCP proxy modules
+
+ToolHub can aggregate trusted local MCP servers through module-specific stdio clients.
+
+Current proxy modules:
+
+- `lceda-pro`: official JLCEDA Pro MCP child;
+- `ida-pro`: `mrexodia/ida-pro-mcp` stdio proxy for the legacy in-IDA GUI plugin.
+
+These modules discover their upstream tool catalogs at ToolHub startup, mirror each permitted upstream JSON input schema into Core, and return native MCP `CallToolResult` values.
+
+The executable, argv, and allow/deny policy are local configuration. Remote callers can invoke only the mirrored tool names and cannot alter the child process command line.
+
+Each proxy keeps one process-global child runtime per effective local configuration so repeated ToolHub server factories do not spawn duplicate child MCP processes.
+
+For `ida-pro`, the child `ida-pro-mcp` process uses upstream instance discovery and proxies requests into the MCP server hosted by the running IDA GUI plugin. ToolHub does not parse Hex-Rays discovery files or speak the plugin's HTTP protocol directly.
 ## Credential state
 
 v0.1 intentionally permits:
