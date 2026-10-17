@@ -13,3 +13,7 @@ modules:
   lceda-pro:
     enabled: false
     config: ./modules/lceda-pro/lceda-pro.local.yaml
+
+  ida-pro:
+    enabled: false
+    config: ./modules/ida-pro/ida-pro.local.yaml
