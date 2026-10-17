@@ -2,9 +2,7 @@
 
 ## Purpose
 
-`remote-mcp` makes MCP-ToolHub act as an MCP forwarder to one remote Streamable HTTP MCP server.
-
-The intended chain is:
+`remote-mcp` is a multi-server MCP forwarder. One ToolHub module can aggregate multiple named remote Streamable HTTP MCP servers.
 
 ```text
 ChatGPT cloud
@@ -15,55 +13,110 @@ OpenAI Secure MCP Tunnel
     v
 MCP-ToolHub
     |
-    | Streamable HTTP + fixed static authentication
-    v
-remote MCP server
+    +-> remote-mcp / sleeprecord-server -> remote MCP A
+    +-> remote-mcp / nas-server         -> remote MCP B
+    +-> remote-mcp / lab-server         -> remote MCP C
 ```
 
-ToolHub remains the only MCP surface registered in ChatGPT. The remote server is aggregated behind it in the same way local child MCP servers are aggregated.
+ToolHub remains the only MCP surface registered in ChatGPT.
 
-## Static authentication model
+## Named server profiles
 
-The remote URL and authentication headers are local ToolHub configuration. Remote callers cannot supply or modify them.
-
-Example:
+The local config uses a `servers` map:
 
 ```yaml
 version: 1
 
-url: 'https://mcp.example.com/mcp'
+servers:
+  sleeprecord-server:
+    enabled: true
+    url: 'https://sleep.example.com/mcp'
 
-headers:
-  Authorization:
-    env: TOOLHUB_REMOTE_MCP_TOKEN
-    prefix: 'Bearer '
+    headers:
+      Authorization:
+        env: TOOLHUB_SLEEPRECORD_TOKEN
+        prefix: 'Bearer '
 
-allow_tools:
-  - '*'
+    allow_tools:
+      - '*'
+    deny_tools: []
 
-deny_tools: []
+  nas-server:
+    enabled: false
+    url: 'https://nas.example.com/mcp'
+    headers:
+      X-API-Key:
+        env: TOOLHUB_NAS_API_KEY
+    allow_tools:
+      - '*'
+    deny_tools: []
 ```
 
-For a custom two-header static validation scheme:
+Server IDs are static local capability names and must match:
+
+```text
+[a-z0-9][a-z0-9-]*
+```
+
+Examples:
+
+```text
+sleeprecord-server
+nas-server
+lab-server
+```
+
+The remote caller cannot supply a URL or create an arbitrary server profile.
+
+## Public Tool names
+
+Each upstream tool is namespaced by the configured server ID.
+
+For example, if `sleeprecord-server` exposes:
+
+```text
+get_sleep_summary
+list_sleep_sessions
+```
+
+ToolHub exposes:
+
+```text
+remote_mcp_sleeprecord_server_get_sleep_summary
+remote_mcp_sleeprecord_server_list_sleep_sessions
+```
+
+This keeps multiple remote servers from colliding in the ChatGPT tool catalog.
+
+## Static authentication
+
+Headers are fixed local configuration. Secret values should normally be resolved from environment variables:
+
+```yaml
+headers:
+  Authorization:
+    env: TOOLHUB_SLEEPRECORD_TOKEN
+    prefix: 'Bearer '
+```
+
+Custom static validation is also supported:
 
 ```yaml
 headers:
   X-Client-Id:
-    env: TOOLHUB_REMOTE_MCP_CLIENT_ID
+    env: TOOLHUB_SLEEPRECORD_CLIENT_ID
   X-Client-Secret:
-    env: TOOLHUB_REMOTE_MCP_CLIENT_SECRET
+    env: TOOLHUB_SLEEPRECORD_CLIENT_SECRET
 ```
 
-Literal non-secret headers are also allowed:
+Literal non-secret headers are allowed:
 
 ```yaml
 headers:
   X-Integration: MCP-ToolHub
 ```
 
-Secrets should normally be injected into the ToolHub process environment rather than written directly into YAML.
-
-The following MCP transport-managed headers cannot be overridden:
+The following transport-managed headers cannot be overridden:
 
 - `Content-Type`
 - `Mcp-Session-Id`
@@ -73,40 +126,29 @@ A static `Authorization` header is permitted.
 
 ## Transport policy
 
-HTTPS is required by default.
-
-Plain HTTP requires an explicit local opt-in:
+HTTPS is required by default. Plain HTTP requires explicit local opt-in:
 
 ```yaml
 allow_insecure_http: true
 ```
 
-This should only be used for a trusted LAN/dev endpoint.
+The Streamable HTTP client keeps redirects same-origin.
 
-The MCP SDK Streamable HTTP transport keeps redirects same-origin.
+## Discovery and forwarding
 
-## Tool discovery and forwarding
+At ToolHub startup, each enabled server profile is initialized independently:
 
-At ToolHub startup, the module:
+1. resolve its fixed URL and headers;
+2. connect with Streamable HTTP;
+3. perform MCP initialization;
+4. call `tools/list`;
+5. apply that server's `allow_tools` / `deny_tools` policy;
+6. namespace the mirrored tools with the server ID;
+7. forward later `tools/call` requests to the selected server.
 
-1. resolves configured static headers;
-2. connects to the fixed remote MCP URL;
-3. performs the MCP initialize handshake;
-4. calls `tools/list`;
-5. applies local `allow_tools` / `deny_tools`;
-6. mirrors upstream JSON input schemas into ToolHub;
-7. prefixes exported tools with `remote_mcp_`;
-8. forwards `tools/call` and returns the upstream native MCP result.
+Each server keeps its own MCP client/runtime. A call failure reconnects that server and retries once.
 
-If a call fails because the remote MCP connection has died, ToolHub closes the client, reconnects, and retries the call once.
-
-The tool catalog is startup-time state. If the remote server changes its tool list or local allow/deny policy changes, restart ToolHub and refresh the ChatGPT connector.
-
-## Relation to CloudBase static credentials
-
-CloudBase hosted MCP examples use the same general shape: a fixed HTTP MCP URL plus static request headers for non-interactive authentication.
-
-ToolHub generalizes that pattern instead of hard-coding Tencent-specific header names. Any remote MCP server can use Bearer, API-key, or custom static headers configured locally.
+The mirrored tool catalog is startup-time state. After changing server profiles, remote tool lists, or allow/deny policy, restart ToolHub and refresh the ChatGPT connector.
 
 ## Setup
 
@@ -117,7 +159,7 @@ Copy-Item .\modules\remote-mcp\remote-mcp.example.yaml `
           .\modules\remote-mcp\remote-mcp.local.yaml
 ```
 
-Set the required secret environment variables, edit the fixed URL/tool policy, then enable:
+Enable the module once:
 
 ```yaml
 modules:
@@ -126,4 +168,4 @@ modules:
     config: ./modules/remote-mcp/remote-mcp.local.yaml
 ```
 
-Restart ToolHub and refresh the ChatGPT connector.
+Additional remote servers are added under `servers:`; no additional ToolHub module registration is required.
