@@ -1,19 +1,9 @@
 version: 1
 
-# Optional when using OpenAI Secure MCP Tunnel / stdio mode.
 tunnel:
   name: main
   id: tunnel_0123456789abcdef0123456789abcdef
   raw_key: sk-replace-me
-
-# Optional when running ToolHub as a hosted Streamable HTTP MCP server.
-# Recommended: keep ToolHub on loopback and terminate public HTTPS + mTLS
-# in a reverse proxy such as nginx or Caddy.
-http:
-  host: 127.0.0.1
-  port: 3333
-  path: /mcp
-  allow_public_bind: false
 
 modules:
   local-build:
@@ -27,3 +17,7 @@ modules:
   ida-pro:
     enabled: false
     config: ./modules/ida-pro/ida-pro.local.yaml
+
+  remote-mcp:
+    enabled: false
+    config: ./modules/remote-mcp/remote-mcp.local.yaml
