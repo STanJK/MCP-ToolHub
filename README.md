@@ -286,6 +286,50 @@ modules:
 `allow_tools: ['*']` is an explicit trust decision: it mirrors the complete official MCP surface exposed by the installed JLCEDA Pro version, including editor-changing operations and any generic invocation capability. Replace `*` with exact upstream tool names to narrow the surface, and/or use `deny_tools`.
 
 The upstream tool catalog is discovered when ToolHub starts. After changing the JLCEDA client version or tool policy, restart ToolHub and refresh the ChatGPT connector so the new tool catalog is discovered.
+## IDA Pro / mrexodia ida-pro-mcp proxy
+
+ToolHub can also aggregate the GUI MCP bridge from `mrexodia/ida-pro-mcp`.
+
+```text
+ChatGPT
+  -> OpenAI Secure MCP Tunnel
+  -> MCP-ToolHub
+  -> ida-pro-mcp --transport stdio
+  -> upstream instance auto-discovery
+  -> IDA GUI plugin MCP on 127.0.0.1:<port>
+  -> current IDB
+```
+
+The upstream stdio server already knows how to discover registered IDA GUI instances and proxy MCP requests to them, so ToolHub deliberately does not parse Hex-Rays discovery files or reimplement the IDA HTTP bridge.
+
+Create the local config:
+
+```powershell
+Copy-Item .\modules\ida-pro\ida-pro.example.yaml .\modules\ida-pro\ida-pro.local.yaml
+```
+
+Example for the local Python environment used during installation:
+
+```yaml
+version: 1
+command: 'C:/STanJK/Env/Python/3.11.9/Scripts/ida-pro-mcp.exe'
+args:
+  - --transport
+  - stdio
+allow_tools:
+  - '*'
+deny_tools: []
+```
+
+Enable it under `modules.ida-pro` in `toolhub.local.yaml`, restart ToolHub, and refresh the ChatGPT connector.
+
+When multiple IDA instances are running, add `--ida-rpc http://127.0.0.1:<port>` to the local args to pin a specific instance. Debugger tools are an upstream opt-in extension and can be selected by pinning an RPC URL containing `?ext=dbg`.
+
+`allow_tools: ['*']` is a high-trust mode: the upstream surface includes mutating IDB operations and `py_eval`. Use exact tool names to narrow it if needed.
+
+The upstream project currently recommends the official Hex-Rays IDA MCP server for new deployments and describes this GUI-plugin path as transitional. The ToolHub module is intentionally isolated so the upstream implementation can be swapped later.
+
+See `docs/IDA_PRO_MCP.md` for the exact runtime and trust model.
 ## OpenAI Secure MCP Tunnel
 
 Install the official tunnel client release and verify its SHA-256:
