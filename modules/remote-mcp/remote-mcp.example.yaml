@@ -1,0 +1,26 @@
+version: 1
+
+# Remote Streamable HTTP MCP endpoint.
+url: 'https://mcp.example.com/mcp'
+
+# HTTPS is required by default. Set true only for a trusted LAN/dev endpoint.
+allow_insecure_http: false
+
+# Fixed request headers. Secret values should normally come from the ToolHub
+# process environment instead of being written directly into this file.
+headers:
+  Authorization:
+    env: TOOLHUB_REMOTE_MCP_TOKEN
+    prefix: 'Bearer '
+
+  # Example custom static validation:
+  # X-Client-Id:
+  #   env: TOOLHUB_REMOTE_MCP_CLIENT_ID
+  # X-Client-Secret:
+  #   env: TOOLHUB_REMOTE_MCP_CLIENT_SECRET
+
+# Explicit local trust policy for the upstream MCP tool catalog.
+allow_tools:
+  - '*'
+
+deny_tools: []
