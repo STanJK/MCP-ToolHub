@@ -1,6 +1,6 @@
 # MCP-ToolHub
 
-A small local MCP capability broker for exposing selected workstation capabilities without turning the machine into a general-purpose remote shell. Current modules cover fixed local build operations plus child-MCP proxies for JLCEDA Pro and IDA Pro.
+A small local MCP capability broker for exposing selected workstation capabilities without turning the machine into a general-purpose remote shell. Current modules cover fixed local build operations, local child-MCP proxies for JLCEDA Pro and IDA Pro, and a remote Streamable HTTP MCP proxy with fixed static authentication.
 
 ## Architecture
 
@@ -16,16 +16,16 @@ official openai/tunnel-client
         v
 MCP-ToolHub Core
         |
-        +-------------------+-------------------+
-        |                   |                   |
-        v                   v                   v
-   Local Build          JLCEDA Pro           IDA Pro
-        |                   |                   |
- fixed project +       lceda-pro MCP      ida-pro-mcp stdio
- fixed operation            |                   |
-        |                   v                   v
-        v              JLCEDA editor       IDA GUI plugin
- local toolchain
+        +---------------+---------------+---------------+
+        |               |               |               |
+        v               v               v               v
+   Local Build      JLCEDA Pro       IDA Pro        Remote MCP
+        |               |               |               |
+ fixed project +   lceda-pro MCP   ida-pro-mcp    HTTPS + static
+ fixed operation        |            stdio           headers
+        |               v               |               |
+        v          JLCEDA editor        v               v
+ local toolchain                    IDA GUI       remote server
 ```
 
 The tunnel layer is not reimplemented here. MCP-ToolHub uses OpenAI's official `openai/tunnel-client`.
@@ -398,6 +398,46 @@ When multiple IDA instances are running, add `--ida-rpc http://127.0.0.1:<port>`
 The upstream project currently recommends the official Hex-Rays IDA MCP server for new deployments and describes this GUI-plugin path as transitional. The ToolHub module is intentionally isolated so the upstream implementation can be swapped later.
 
 See `docs/IDA_PRO_MCP.md` for the exact runtime and trust model.
+## Remote MCP proxy
+
+ToolHub can forward a remote Streamable HTTP MCP server through the existing ChatGPT Connector:
+
+```text
+ChatGPT cloud
+  -> OpenAI Secure MCP Tunnel
+  -> MCP-ToolHub
+  -> fixed HTTPS MCP URL + static headers
+  -> remote MCP server
+```
+
+The remote URL, credentials, and tool allowlist are local configuration. The remote model cannot change them.
+
+Create the local config:
+
+```powershell
+Copy-Item .\modules\remote-mcp\remote-mcp.example.yaml `
+          .\modules\remote-mcp\remote-mcp.local.yaml
+```
+
+Example:
+
+```yaml
+version: 1
+url: 'https://mcp.example.com/mcp'
+
+headers:
+  Authorization:
+    env: TOOLHUB_REMOTE_MCP_TOKEN
+    prefix: 'Bearer '
+
+allow_tools:
+  - '*'
+deny_tools: []
+```
+
+Custom static validation can use any fixed header names, with secret values sourced from environment variables. HTTPS is required unless `allow_insecure_http: true` is explicitly set for a trusted LAN/dev endpoint.
+
+See `docs/REMOTE_MCP.md`.
 ## OpenAI Secure MCP Tunnel
 
 Install the official tunnel client release and verify its SHA-256:
@@ -476,6 +516,7 @@ docs/
   MODULE_API.md
   JLCEDA_MCP.md
   IDA_PRO_MCP.md
+  REMOTE_MCP.md
 
 toolhub.example.yaml
 toolhub.local.yaml              # gitignored
