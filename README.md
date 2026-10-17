@@ -1,11 +1,11 @@
 # MCP-ToolHub
 
-A small local MCP capability broker. The first module is **Local Build**: remote callers may select a configured project and a configured operation, but they never receive a general-purpose shell.
+A small local MCP capability broker for exposing selected workstation capabilities without turning the machine into a general-purpose remote shell. Current modules cover fixed local build operations plus child-MCP proxies for JLCEDA Pro and IDA Pro.
 
 ## Architecture
 
 ```text
-ChatGPT / Codex / Responses API
+ChatGPT / Codex
         |
         v
 OpenAI Secure MCP Tunnel
@@ -14,13 +14,18 @@ OpenAI Secure MCP Tunnel
 official openai/tunnel-client
         | stdio MCP
         v
-ToolHub Core
-        | Module API v1
-        v
-Local Build
-        | local YAML bridge
-        v
-fixed project root + fixed process mapping
+MCP-ToolHub Core
+        |
+        +-------------------+-------------------+
+        |                   |                   |
+        v                   v                   v
+   Local Build          JLCEDA Pro           IDA Pro
+        |                   |                   |
+ fixed project +       lceda-pro MCP      ida-pro-mcp stdio
+ fixed operation            |                   |
+        |                   v                   v
+        v              JLCEDA editor       IDA GUI plugin
+ local toolchain
 ```
 
 The tunnel layer is not reimplemented here. MCP-ToolHub uses OpenAI's official `openai/tunnel-client`.
@@ -229,6 +234,69 @@ For local stdio MCP testing:
 npx @modelcontextprotocol/inspector node .\src\index.mjs
 ```
 
+## Local Build project: RA3MCP
+
+RA3MCP is wired directly to the underlying CMake / Cargo toolchains rather than through `Build.ps1`, `Test.ps1`, or `Stage.ps1`.
+
+Project root:
+
+```text
+C:\STanJK\Development\RA3MCP
+```
+
+Current fixed operations:
+
+```text
+git-status
+git-pull
+git-sync-generated
+
+native-configure
+native-build
+native-test
+
+cargo-check
+cargo-build
+cargo-test
+```
+
+Native configuration uses the Visual Studio 2026 bundled CMake:
+
+```text
+C:\Program Files\Microsoft Visual Studio\18\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe
+```
+
+with generator:
+
+```text
+Visual Studio 18 2026
+Win32
+```
+
+The native sequence is equivalent to:
+
+```text
+cmake -S . -B build/win32
+      -G "Visual Studio 18 2026"
+      -A Win32
+      -DMINHOOK_DIR:PATH=C:/STanJK/Development/RA3MCP/third_party/minhook
+      -DRA3_BUILD_BRIDGE=ON
+
+cmake --build build/win32 --config Release
+ctest --test-dir build/win32 -C Release --output-on-failure
+```
+
+The Rust controller uses locked offline verification:
+
+```text
+cargo check --locked --offline -p ra3ctl
+cargo build --locked --offline -p ra3ctl --release
+cargo test  --locked --offline -p ra3ctl
+```
+
+`--locked` prevents local dependency-resolution drift; `--offline` prevents ToolHub verification from downloading dependencies.
+
+RA3MCP staging remains outside the normal ToolHub build path for now.
 ## JLCEDA Pro / 嘉立创 EDA official MCP proxy
 
 ToolHub can aggregate the MCP server built into JLCEDA Pro desktop client V4.1.60+.
@@ -383,8 +451,20 @@ src/
 modules/
   local-build/
     index.mjs
+    builtins/
+      git-sync-generated.mjs
     local-build.example.yaml
     local-build.local.yaml      # gitignored
+
+  lceda-pro/
+    index.mjs
+    lceda-pro.example.yaml
+    lceda-pro.local.yaml        # gitignored
+
+  ida-pro/
+    index.mjs
+    ida-pro.example.yaml
+    ida-pro.local.yaml          # gitignored
 
 scripts/
   bootstrap-tunnel.ps1
@@ -394,6 +474,8 @@ scripts/
 docs/
   ARCHITECTURE.md
   MODULE_API.md
+  JLCEDA_MCP.md
+  IDA_PRO_MCP.md
 
 toolhub.example.yaml
 toolhub.local.yaml              # gitignored
