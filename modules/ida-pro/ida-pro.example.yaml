@@ -1,0 +1,29 @@
+version: 1
+
+# mrexodia/ida-pro-mcp GUI proxy.
+# The installed entry point defaults to stdio and auto-discovers running IDA instances.
+# If ida-pro-mcp is not on PATH, use the full installed executable path, for example:
+# command: 'C:/STanJK/Env/Python/3.11.9/Scripts/ida-pro-mcp.exe'
+command: ida-pro-mcp
+
+args:
+  - --transport
+  - stdio
+
+# Optional when multiple IDA GUI instances are running:
+# args:
+#   - --transport
+#   - stdio
+#   - --ida-rpc
+#   - 'http://127.0.0.1:13337'
+#
+# To opt into upstream debugger extension tools, pin the RPC URL with ?ext=dbg:
+#   - 'http://127.0.0.1:13337/mcp?ext=dbg'
+
+# Explicit local trust decision. "*" mirrors every MCP tool exposed by the
+# selected IDA instance, including mutating operations such as rename, patch,
+# type edits, and py_eval.
+allow_tools:
+  - '*'
+
+deny_tools: []
