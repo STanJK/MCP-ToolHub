@@ -60,3 +60,93 @@ projects:
         args:
           - run
           - build
+
+  RA3MCP:
+    description: RA3MCP native bridge and Rust controller
+    root: 'C:\STanJK\Development\RA3MCP'
+
+    operations:
+      git-status:
+        description: Show RA3MCP git status
+        program: git.exe
+        args:
+          - status
+          - --short
+          - --branch
+
+      git-pull:
+        description: Fast-forward RA3MCP from its configured upstream
+        program: git.exe
+        args:
+          - pull
+          - --ff-only
+
+      git-sync-generated:
+        description: Safely recover a locally dirty Cargo.lock when origin/main contains the canonical incoming lockfile
+        builtin: git-sync-generated
+
+      native-configure:
+        description: Configure RA3InputBridge for Visual Studio 2022 Win32 with local MinHook
+        program: cmake.exe
+        args:
+          - -S
+          - .
+          - -B
+          - build/win32
+          - -G
+          - Visual Studio 17 2022
+          - -A
+          - Win32
+          - -DMINHOOK_DIR:PATH=C:/STanJK/Development/RA3MCP/third_party/minhook
+          - -DRA3_BUILD_BRIDGE=ON
+
+      native-build:
+        description: Build RA3InputBridge and native tests in Release
+        program: cmake.exe
+        args:
+          - --build
+          - build/win32
+          - --config
+          - Release
+
+      native-test:
+        description: Run native CTest suite in Release
+        program: ctest.exe
+        args:
+          - --test-dir
+          - build/win32
+          - -C
+          - Release
+          - --output-on-failure
+
+      cargo-check:
+        description: Check ra3ctl with locked offline dependency resolution
+        program: cargo.exe
+        args:
+          - check
+          - --locked
+          - --offline
+          - -p
+          - ra3ctl
+
+      cargo-build:
+        description: Build ra3ctl Release with locked offline dependency resolution
+        program: cargo.exe
+        args:
+          - build
+          - --locked
+          - --offline
+          - -p
+          - ra3ctl
+          - --release
+
+      cargo-test:
+        description: Test ra3ctl with locked offline dependency resolution
+        program: cargo.exe
+        args:
+          - test
+          - --locked
+          - --offline
+          - -p
+          - ra3ctl
+
