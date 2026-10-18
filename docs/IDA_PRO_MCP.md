@@ -113,17 +113,19 @@ This is a separate local trust decision.
 
 ## Capability boundary
 
-`allow_tools: ['*']` mirrors the complete upstream tool surface for the selected IDA instance. The upstream server includes read-only analysis operations as well as mutating capabilities such as:
+`allow_tools: ['*']` mirrors the upstream tool surface **except for ToolHub hard-denied Python execution capabilities**.
 
-- comments and renaming;
-- type edits;
-- code/data definition changes;
-- patching bytes or assembly;
-- `py_eval` in IDA context.
+ToolHub always filters:
 
-Use exact upstream tool names in `allow_tools` or `deny_tools` if a narrower surface is desired.
+- `py_eval`;
+- `py_exec_file`;
+- future upstream tool names containing a standalone `py` or `python` execution namespace such as `py_shell`, `python_eval`, `exec_python`, or `run-py-script`.
 
-ToolHub does not expose a generic shell through this module. It mirrors only MCP tools reported by the child server.
+This hard deny is enforced twice: during `tools/list` mirroring and again immediately before forwarding `tools/call`. Local `allow_tools: ['*']` cannot override it.
+
+The remaining upstream surface still includes powerful mutating IDB capabilities such as comments/renaming, type edits, code/data definition changes, and patching bytes or assembly. Use exact upstream tool names in `allow_tools` or `deny_tools` if a narrower surface is desired.
+
+ToolHub does not expose generic Python execution through this module.
 
 ## Discovery and reconnect behavior
 
