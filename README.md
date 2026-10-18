@@ -393,7 +393,7 @@ Enable it under `modules.ida-pro` in `toolhub.local.yaml`, restart ToolHub, and 
 
 When multiple IDA instances are running, add `--ida-rpc http://127.0.0.1:<port>` to the local args to pin a specific instance. Debugger tools are an upstream opt-in extension and can be selected by pinning an RPC URL containing `?ext=dbg`.
 
-`allow_tools: ['*']` is a high-trust mode: the upstream surface includes mutating IDB operations and `py_eval`. Use exact tool names to narrow it if needed.
+`allow_tools: ['*']` still exposes mutating IDB operations, but ToolHub hard-denies IDAPython execution tools (`py_eval`, `py_exec_file`, and future `py`/`python`-named execution surfaces). Use exact tool names to narrow the remaining write surface if needed.
 
 The upstream project currently recommends the official Hex-Rays IDA MCP server for new deployments and describes this GUI-plugin path as transitional. The ToolHub module is intentionally isolated so the upstream implementation can be swapped later.
 
