@@ -5,6 +5,20 @@ import { parse } from "yaml";
 
 const runtimes = new Map();
 
+const hardDeniedToolNames = new Set([
+  "py_eval",
+  "py_exec_file"
+]);
+
+function isHardDeniedTool(name) {
+  const normalized = String(name).toLowerCase();
+  if (hardDeniedToolNames.has(normalized)) return true;
+
+  // Fail closed for future upstream Python execution surfaces.
+  // Examples matched: py_shell, python_eval, exec_python, run-py-script.
+  return /(^|[_-])(?:py|python)(?:[_-]|$)/i.test(normalized);
+}
+
 function normalizeActionId(name) {
   let id = String(name)
     .toLowerCase()
@@ -42,6 +56,7 @@ async function loadConfig(configPath) {
 }
 
 function toolAllowed(name, config) {
+  if (isHardDeniedTool(name)) return false;
   if (config.denyTools.includes(name)) return false;
   return config.allowTools.includes("*") || config.allowTools.includes(name);
 }
@@ -140,6 +155,9 @@ function createRuntime(config) {
     await discover();
     const upstreamName = upstreamByAction.get(action);
     if (!upstreamName) throw new Error(`Unknown proxied ida-pro-mcp action: ${action}`);
+    if (isHardDeniedTool(upstreamName)) {
+      throw new Error(`ida-pro-mcp tool ${upstreamName} is hard-denied by ToolHub policy`);
+    }
 
     const call = async () => {
       const mcp = await ensureConnected();
