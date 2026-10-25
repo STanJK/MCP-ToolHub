@@ -118,6 +118,19 @@ modules/<module-id>/index.mjs
 
 The remote caller cannot provide a module file path.
 
+## Failure isolation
+
+Module API v1 modules are isolated at the Core boundary. If an enabled module cannot be imported, instantiated, described, or validated, Core records that module as `degraded`, logs the reason, skips its tools, and continues serving healthy modules.
+
+Core exposes:
+
+```text
+toolhub_module_status
+```
+
+which reports each ready module with its action count and each degraded module with the failure stage and error message.
+
+A module invocation failure is already scoped to that tool call and is returned as an MCP error result; it does not tear down the ToolHub server.
 ## v1 non-goals
 
 Module API v1 intentionally has no:
