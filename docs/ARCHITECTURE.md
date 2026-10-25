@@ -138,6 +138,27 @@ The builtin accepts no remote path, command, branch, remote, or file argument. Y
 
 Cargo verification operations should use `--locked` so normal check/build/test execution never rewrites dependency resolution state.
 
+## Module failure isolation
+
+Enabled modules are independent fault domains.
+
+ToolHub Core treats top-level configuration parsing as fatal, but a failure inside one enabled module does not prevent the MCP server from being created. Per-module failures are recorded with a stage:
+
+```text
+registration
+import
+factory
+describe
+contract
+```
+
+A degraded module is omitted from the current MCP tool catalog while healthy modules continue to register normally. Core logs the failure and exposes `toolhub_module_status` so callers can inspect ready/degraded modules without depending on the failed backend.
+
+This is particularly important for optional child backends such as IDA Pro or JLCEDA Pro: IDA not running, an editor bridge being offline, or a remote MCP being temporarily unavailable must not take Local Build or unrelated modules down with it.
+
+Invalid action IDs or invalid per-action schemas are likewise skipped at action-registration time instead of aborting the whole ToolHub server.
+
+Because proxy tool catalogs are discovered at server construction time, bringing a degraded backend online later may require a ToolHub/connector refresh before its tools reappear.
 ## Child MCP proxy modules
 
 ToolHub can aggregate trusted local MCP servers through module-specific stdio clients.
