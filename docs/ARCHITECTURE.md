@@ -174,7 +174,7 @@ The executable, argv, and allow/deny policy are local configuration. Remote call
 
 Each proxy keeps one process-global child runtime per effective local configuration so repeated ToolHub server factories do not spawn duplicate child MCP processes.
 
-For `ida-pro`, the child `ida-pro-mcp` process uses upstream instance discovery and proxies requests into the MCP server hosted by the running IDA GUI plugin. ToolHub does not parse Hex-Rays discovery files or speak the plugin's HTTP protocol directly.
+For `ida-pro`, the child `ida-pro-mcp` process uses upstream instance discovery and proxies requests into the MCP server hosted by the running IDA GUI plugin. ToolHub does not parse Hex-Rays discovery files or speak the plugin's HTTP protocol directly. Unlike ordinary mirroring proxies, IDA is exposed through a fixed `status / discover / call` facade so the connector does not carry the full upstream schema set on every turn and the catalog remains stable when IDA opens or closes.
 ## Credential state
 
 v0.1 intentionally permits:
