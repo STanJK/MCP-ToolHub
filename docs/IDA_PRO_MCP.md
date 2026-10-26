@@ -30,12 +30,17 @@ ToolHub intentionally uses this stdio wrapper rather than reimplementing the ups
 ChatGPT
   -> OpenAI Secure MCP Tunnel
   -> MCP-ToolHub
+       -> ida_pro_status
+       -> ida_pro_discover
+       -> ida_pro_call
   -> @modelcontextprotocol/client (stdio)
   -> ida-pro-mcp --transport stdio
   -> auto-discovered IDA GUI instance
   -> IDA plugin HTTP MCP endpoint
   -> current IDB
 ```
+
+ToolHub deliberately exposes a fixed three-tool facade instead of mirroring the upstream IDA tool catalog into the connector. The upstream catalog is discovered at runtime only when `status`, `discover`, or `call` needs it.
 
 ## Module configuration
 
@@ -127,17 +132,29 @@ The remaining upstream surface still includes powerful mutating IDB capabilities
 
 ToolHub does not expose generic Python execution through this module.
 
-## Discovery and reconnect behavior
+## Fixed facade and reconnect behavior
 
-At ToolHub startup the module:
+The connector-visible surface is always:
 
-1. starts one process-global `ida-pro-mcp` child runtime;
-2. calls upstream `tools/list`;
-3. applies the local allow/deny policy;
-4. mirrors each upstream JSON input schema into ToolHub;
-5. prefixes each exported tool with `ida_pro_`;
-6. forwards `tools/call` results natively.
+```text
+ida_pro_status
+ida_pro_discover
+ida_pro_call
+```
 
-If an invocation fails because the child MCP process died, ToolHub closes it, starts a new stdio child, and retries the MCP call once. Upstream instance discovery therefore runs again on reconnect.
+`describe()` is static and never contacts IDA. Therefore IDA being closed does not degrade ToolHub startup and does not remove IDA capability names from the connector catalog.
 
-The mirrored tool catalog itself is startup-time state. If the upstream extension set or allow/deny policy changes, restart ToolHub and refresh the ChatGPT connector.
+Runtime behavior:
+
+1. `ida_pro_status` attempts to connect and reports `ready` or `offline`;
+2. `ida_pro_discover` performs upstream `tools/list`, applies hard/local policy, and returns matching tool metadata;
+3. schemas are omitted by default and returned only when `include_schema=true`;
+4. `ida_pro_call` validates the exact upstream tool name against the permitted runtime catalog and forwards `tools/call` natively;
+5. a failed call closes the child client, reconnects, refreshes the catalog, revalidates the target tool, and retries once.
+
+This avoids two structural problems of full mirroring:
+
+- large upstream schemas no longer bloat every ChatGPT turn;
+- opening or closing IDA no longer requires the connector to gain or lose dozens of dynamic tool definitions.
+
+Changing the local allow/deny policy still requires restarting ToolHub because module configuration is loaded when the module instance is created.
