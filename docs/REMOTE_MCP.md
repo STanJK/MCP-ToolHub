@@ -2,7 +2,7 @@
 
 ## Purpose
 
-`remote-mcp` is a multi-server MCP forwarder. One ToolHub module can aggregate multiple named remote Streamable HTTP MCP servers.
+`remote-mcp` is a multi-server MCP forwarder exposed through a fixed three-tool facade. One ToolHub module can aggregate multiple named remote Streamable HTTP MCP servers without mirroring every upstream schema into the connector.
 
 ```text
 ChatGPT cloud
@@ -68,25 +68,31 @@ lab-server
 
 The remote caller cannot supply a URL or create an arbitrary server profile.
 
-## Public Tool names
+## Connector-visible facade
 
-Each upstream tool is namespaced by the configured server ID.
-
-For example, if `sleeprecord-server` exposes:
+ToolHub always exposes only:
 
 ```text
-get_sleep_summary
-list_sleep_sessions
+remote_mcp_status
+remote_mcp_discover
+remote_mcp_call
 ```
 
-ToolHub exposes:
+Example flow:
 
 ```text
-remote_mcp_sleeprecord_server_get_sleep_summary
-remote_mcp_sleeprecord_server_list_sleep_sessions
+remote_mcp_discover
+  server = sleeprecord-server
+  query = queryEnv
+  include_schema = true
+
+remote_mcp_call
+  server = sleeprecord-server
+  tool = queryEnv
+  arguments = {...}
 ```
 
-This keeps multiple remote servers from colliding in the ChatGPT tool catalog.
+The configured server ID selects a local static profile. Remote callers still cannot supply or alter a URL, credential header, or unregistered backend.
 
 ## Static authentication
 
@@ -136,19 +142,19 @@ The Streamable HTTP client keeps redirects same-origin.
 
 ## Discovery and forwarding
 
-At ToolHub startup, each enabled server profile is initialized independently:
+`describe()` is static and does not contact any remote server.
 
-1. resolve its fixed URL and headers;
-2. connect with Streamable HTTP;
-3. perform MCP initialization;
-4. call `tools/list`;
-5. apply that server's `allow_tools` / `deny_tools` policy;
-6. namespace the mirrored tools with the server ID;
-7. forward later `tools/call` requests to the selected server.
+At runtime:
 
-Each server keeps its own MCP client/runtime. A call failure reconnects that server and retries once.
+1. `remote_mcp_status` checks one or all configured servers;
+2. `remote_mcp_discover` connects to the selected server, calls `tools/list`, applies its `allow_tools` / `deny_tools` policy, and returns matching metadata;
+3. schemas are omitted by default and returned only when `include_schema=true`;
+4. `remote_mcp_call` revalidates the exact upstream tool name against the selected server's permitted catalog and forwards `tools/call`;
+5. a failed call reconnects that server, refreshes the catalog, revalidates the tool, and retries once.
 
-The mirrored tool catalog is startup-time state. After changing server profiles, remote tool lists, or allow/deny policy, restart ToolHub and refresh the ChatGPT connector.
+Credentials referenced through environment variables are resolved only when the selected server is contacted. A missing secret or unavailable remote backend therefore does not remove the fixed facade from ToolHub startup.
+
+Changing the local server registry or allow/deny policy still requires restarting ToolHub because module configuration is loaded when the module instance is created.
 
 ## Setup
 
