@@ -20,9 +20,16 @@ args:
 # To opt into upstream debugger extension tools, pin the RPC URL with ?ext=dbg:
 #   - 'http://127.0.0.1:13337/mcp?ext=dbg'
 
-# Explicit local trust decision. "*" mirrors every MCP tool exposed by the
-# selected IDA instance, including mutating operations such as rename, patch,
-# type edits, and py_eval.
+# Explicit local trust decision for the runtime facade. "*" permits every
+# upstream IDA MCP tool except ToolHub's built-in hard denies.
+#
+# ToolHub exposes only three connector-visible tools:
+#   ida_pro_status
+#   ida_pro_discover
+#   ida_pro_call
+#
+# Upstream py/python execution surfaces (including py_eval and py_exec_file)
+# are hard-denied even when "*" is used.
 allow_tools:
   - '*'
 
