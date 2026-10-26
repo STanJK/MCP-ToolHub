@@ -161,7 +161,7 @@ Invalid action IDs or invalid per-action schemas are likewise skipped at action-
 Because proxy tool catalogs are discovered at server construction time, bringing a degraded backend online later may require a ToolHub/connector refresh before its tools reappear.
 ## Child MCP proxy modules
 
-ToolHub can aggregate trusted local MCP servers through module-specific stdio clients.
+ToolHub can aggregate trusted local or remote MCP servers through module-specific clients.
 
 Current proxy modules:
 
@@ -175,6 +175,8 @@ The executable, argv, and allow/deny policy are local configuration. Remote call
 Each proxy keeps one process-global child runtime per effective local configuration so repeated ToolHub server factories do not spawn duplicate child MCP processes.
 
 For `ida-pro`, the child `ida-pro-mcp` process uses upstream instance discovery and proxies requests into the MCP server hosted by the running IDA GUI plugin. ToolHub does not parse Hex-Rays discovery files or speak the plugin's HTTP protocol directly. Unlike ordinary mirroring proxies, IDA is exposed through a fixed `status / discover / call` facade so the connector does not carry the full upstream schema set on every turn and the catalog remains stable when IDA opens or closes.
+
+`remote-mcp` uses the same fixed-facade principle for remote Streamable HTTP servers. Server profiles, URLs, credentials, and allow/deny policy remain local configuration; `status / discover / call` are the only connector-visible actions. Upstream schemas are fetched only on demand.
 ## Credential state
 
 v0.1 intentionally permits:
