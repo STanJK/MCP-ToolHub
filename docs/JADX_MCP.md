@@ -1,10 +1,14 @@
-# JADX MCP via remote-mcp
+# JADX MCP module
 
 ## Purpose
 
-JADX is integrated through the existing `remote-mcp` facade rather than a dedicated ToolHub module.
+`jadx-mcp` is a dedicated ToolHub module for the local `0xdad0/jadx-mcp` plugin running inside `jadx-gui`.
 
-The local backend is the `0xdad0/jadx-mcp` plugin running inside `jadx-gui`:
+It is intentionally separate from `remote-mcp`:
+
+- `remote-mcp` is reserved for remote Streamable HTTP MCP services;
+- `jadx-mcp` owns the local JADX GUI integration;
+- the JADX module only accepts loopback URLs.
 
 ```text
 ChatGPT / Codex
@@ -16,7 +20,7 @@ OpenAI Secure MCP Tunnel
 MCP-ToolHub
     |
     v
-remote_mcp_status / discover / call
+jadx_mcp_status / discover / call
     |
     v
 http://127.0.0.1:8811/mcp
@@ -30,8 +34,6 @@ jadx-gui 1.5.6
     v
 current APK / DEX / JAR
 ```
-
-No JADX-specific connector tools are added. The connector-visible ToolHub surface remains the fixed three-tool `remote-mcp` facade.
 
 ## Local layout
 
@@ -50,7 +52,7 @@ C:\Users\STanJK\.jadx\plugins\
     jadx-mcp-0.1.0.jar
 ```
 
-JADX MCP settings:
+Current JADX MCP settings:
 
 ```text
 Host: 127.0.0.1
@@ -58,53 +60,70 @@ Port: 8811
 Endpoint: http://127.0.0.1:8811/mcp
 ```
 
-Keep the MCP server on loopback. The local plugin should not be exposed directly to LAN/WAN.
+Keep the backend on loopback. The ToolHub module rejects non-loopback hosts.
 
-## remote-mcp profile
+## Module configuration
 
-Add this server under `servers:` in:
+Copy the example:
 
-```text
-modules/remote-mcp/remote-mcp.local.yaml
+```powershell
+Copy-Item .\modules\jadx-mcp\jadx-mcp.example.yaml `
+          .\modules\jadx-mcp\jadx-mcp.local.yaml
 ```
+
+Current local config:
 
 ```yaml
-  jadx:
-    enabled: true
-    url: 'http://127.0.0.1:8811/mcp'
-    allow_insecure_http: true
-    headers: {}
-    allow_tools:
-      - '*'
-    deny_tools: []
+version: 1
+url: 'http://127.0.0.1:8811/mcp'
+
+allow_tools:
+  - '*'
+deny_tools: []
 ```
 
-Plain HTTP is explicitly allowed only because the endpoint is loopback-local.
+Enable the module in `toolhub.local.yaml`:
+
+```yaml
+modules:
+  jadx-mcp:
+    enabled: true
+    config: ./modules/jadx-mcp/jadx-mcp.local.yaml
+```
+
+## Connector-visible facade
+
+The module always exposes only:
+
+```text
+jadx_mcp_status
+jadx_mcp_discover
+jadx_mcp_call
+```
+
+`describe()` is static and does not contact JADX, so closing JADX does not remove these tools from the connector catalog.
 
 ## Runtime flow
 
-Check backend health:
+Health:
 
 ```text
-remote_mcp_status
-  server = jadx
+jadx_mcp_status
 ```
 
 Discover tools without schemas:
 
 ```text
-remote_mcp_discover
-  server = jadx
+jadx_mcp_discover
   query = decompile
   include_schema = false
 ```
 
-Fetch schema only for the tool about to be called:
+Fetch schema only for a narrow tool set:
 
 ```text
-remote_mcp_discover
-  server = jadx
-  query = <exact-or-narrow-tool-name>
+jadx_mcp_discover
+  query = <tool-name>
   include_schema = true
   limit = 5
 ```
@@ -112,23 +131,36 @@ remote_mcp_discover
 Invoke:
 
 ```text
-remote_mcp_call
-  server = jadx
+jadx_mcp_call
   tool = <exact upstream tool name>
   arguments = {...}
 ```
 
-This keeps the full JADX upstream catalog out of the connector schema and only brings relevant argument schemas into model context on demand.
+The full upstream JADX schema set therefore never becomes part of the connector-visible ToolHub catalog.
 
-## Lifecycle
+## Failure isolation
 
-The `remote-mcp` server registry is loaded when ToolHub starts.
+If JADX is closed or the plugin server is stopped:
 
-After adding or changing the `jadx` profile:
+```text
+jadx_mcp_status
+  -> status = offline
+```
 
-1. stop ToolHub;
-2. start/restart `jadx-gui` and start the jadx-mcp server;
-3. restart ToolHub;
-4. a ChatGPT connector refresh is not required solely for adding the profile because the connector-visible `remote_mcp_status / discover / call` tools are unchanged.
+The ToolHub module itself remains loaded and other modules continue operating.
 
-If JADX is closed later, only the `jadx` backend becomes unavailable. Other ToolHub modules and remote MCP profiles continue working.
+A failed call closes the local client, reconnects, refreshes the permitted upstream catalog, revalidates the requested tool, and retries once.
+
+## Security boundary
+
+The module accepts only:
+
+```text
+127.0.0.1
+localhost
+::1
+```
+
+The remote caller cannot provide a URL. The endpoint comes only from the local gitignored module config.
+
+`allow_tools` and `deny_tools` remain local policy controls.
