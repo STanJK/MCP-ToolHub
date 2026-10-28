@@ -7,6 +7,15 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
 
+#[cfg(windows)]
+fn hide_window(command: &mut Command) {
+    use std::os::windows::process::CommandExt;
+    command.creation_flags(0x08000000);
+}
+
+#[cfg(not(windows))]
+fn hide_window(_command: &mut Command) {}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TunnelSnapshot {
@@ -52,6 +61,90 @@ pub struct TunnelManager {
 impl TunnelManager {
     pub fn new(repo_root: PathBuf, config_path: PathBuf) -> Self {
         Self { repo_root, config_path, inner: Arc::new(Mutex::new(Inner::default())) }
+    }
+
+    fn current_profile_name(&self) -> Result<String, String> {
+        crate::config::load(&self.config_path).map(|config| config.tunnel.name)
+    }
+
+    fn profile_path(&self, profile: &str) -> Result<PathBuf, String> {
+        let home = std::env::var_os("USERPROFILE")
+            .map(PathBuf::from)
+            .or_else(|| std::env::var_os("HOME").map(PathBuf::from))
+            .ok_or_else(|| "USERPROFILE/HOME is unavailable".to_string())?;
+        Ok(home
+            .join(".config")
+            .join("tunnel-client")
+            .join(format!("{profile}.yaml")))
+    }
+
+    fn ensure_profile(&self) -> Result<(), String> {
+        let profile = self.current_profile_name()?;
+        let profile_path = self.profile_path(&profile)?;
+        if profile_path.is_file() {
+            log::debug!(
+                target: "toolhub::tunnel",
+                "Tunnel profile {} already exists at {}",
+                profile,
+                profile_path.display()
+            );
+            return Ok(());
+        }
+
+        let script = self.repo_root.join("scripts").join("init-tunnel.ps1");
+        if !script.is_file() {
+            return Err(format!("Tunnel init script not found: {}", script.display()));
+        }
+
+        log::info!(
+            target: "toolhub::tunnel",
+            "Tunnel profile {} is missing; initializing it at {}",
+            profile,
+            profile_path.display()
+        );
+
+        let mut command = Command::new("powershell.exe");
+        command
+            .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-File"])
+            .arg(&script)
+            .current_dir(&self.repo_root)
+            .env("TOOLHUB_CONFIG", &self.config_path)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        hide_window(&mut command);
+        hide_window(&mut command);
+
+        let output = command
+            .output()
+            .map_err(|error| format!("Failed to start init-tunnel.ps1: {error}"))?;
+
+        for line in String::from_utf8_lossy(&output.stdout).lines() {
+            log::info!(target: "toolhub::tunnel", "{line}");
+        }
+        for line in String::from_utf8_lossy(&output.stderr).lines() {
+            log::error!(target: "toolhub::tunnel", "{line}");
+        }
+
+        if !output.status.success() {
+            return Err(format!(
+                "init-tunnel.ps1 failed with exit code {:?}",
+                output.status.code()
+            ));
+        }
+
+        if !profile_path.is_file() {
+            return Err(format!(
+                "Tunnel profile init reported success but profile is still missing: {}",
+                profile_path.display()
+            ));
+        }
+
+        log::info!(
+            target: "toolhub::tunnel",
+            "Tunnel profile {} initialized successfully",
+            profile
+        );
+        Ok(())
     }
 
     fn now_ms() -> u64 {
@@ -152,6 +245,15 @@ impl TunnelManager {
             inner.connection = "observing".to_string();
             inner.last_error = None;
             inner.last_exit_code = None;
+        }
+
+        if let Err(error) = self.ensure_profile() {
+            let mut inner = self.inner.lock().unwrap_or_else(|poison| poison.into_inner());
+            inner.phase = "error".to_string();
+            inner.connection = "degraded".to_string();
+            inner.last_error = Some(error.clone());
+            log::error!(target: "toolhub::tunnel", "{error}");
+            return Err(error);
         }
 
         let script = self.repo_root.join("scripts").join("run-tunnel.ps1");
