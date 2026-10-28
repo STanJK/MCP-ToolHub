@@ -131,8 +131,12 @@ async fn probe_module(module_id: String, runtime: State<'_, AppRuntime>) -> Resu
 }
 
 fn main() {
+    let bootstrap_requested = std::env::args().skip(1).any(|arg| {
+        arg.eq_ignore_ascii_case("--bootstrap") || arg.eq_ignore_ascii_case("-bootstrap")
+    });
+
     tauri::Builder::default()
-        .setup(|app| {
+        .setup(move |app| {
             let logs = logging::install(app_log_dir()).map_err(std::io::Error::other)?;
             let repo_root = config::repo_root().map_err(std::io::Error::other)?;
             let config_path = config::toolhub_config_path(&repo_root);
@@ -145,7 +149,34 @@ fn main() {
                 config_path.display()
             );
 
+            let bootstrap_tunnel = tunnel.clone();
             app.manage(AppRuntime { repo_root, config_path, tunnel, logs });
+
+            if bootstrap_requested {
+                std::thread::Builder::new()
+                    .name("ToolHubBootstrap".to_string())
+                    .spawn(move || {
+                        log::info!(
+                            target: "toolhub::bootstrap",
+                            "Bootstrap requested; starting ToolHub tunnel automatically"
+                        );
+
+                        match bootstrap_tunnel.restart() {
+                            Ok(snapshot) => log::info!(
+                                target: "toolhub::bootstrap",
+                                "Bootstrap tunnel start completed: phase={} connection={}",
+                                snapshot.phase,
+                                snapshot.connection
+                            ),
+                            Err(error) => log::error!(
+                                target: "toolhub::bootstrap",
+                                "Bootstrap tunnel start failed: {error}"
+                            ),
+                        }
+                    })
+                    .map_err(std::io::Error::other)?;
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
