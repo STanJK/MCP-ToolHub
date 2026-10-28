@@ -22,7 +22,7 @@ $server = (Join-Path $repoRoot "src\index.mjs")
 $serverForCommand = $server -replace "\\", "/"
 $command = "node `"$serverForCommand`""
 
-& $client init --sample sample_mcp_stdio_local --profile $tunnel.name --tunnel-id $tunnel.id --mcp-command $command
+& $client init --sample sample_mcp_stdio_local --profile $tunnel.name --tunnel-id $tunnel.id --mcp-command $command --force
 if ($LASTEXITCODE -ne 0) {
   throw "tunnel-client init failed with exit code $LASTEXITCODE"
 }
