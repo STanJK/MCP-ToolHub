@@ -12,4 +12,5 @@ log = { version = "0.4", features = ["std"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_yaml = "0.9"
+sysinfo = "0.34"
 tauri = { version = "2.12.0", features = [] }
