@@ -81,16 +81,11 @@ impl TunnelManager {
     fn ensure_profile(&self) -> Result<(), String> {
         let profile = self.current_profile_name()?;
         let profile_path = self.profile_path(&profile)?;
-        if profile_path.is_file() {
-            log::debug!(
-                target: "toolhub::tunnel",
-                "Tunnel profile {} already exists at {}",
-                profile,
-                profile_path.display()
-            );
-            return Ok(());
-        }
 
+        // Reinitialize on every explicit Start/Restart. A profile file can exist
+        // while being stale, incomplete, or tied to an older tunnel command.
+        // The local config is the authority; init-tunnel.ps1 deterministically
+        // rewrites the official tunnel-client profile from that config.
         let script = self.repo_root.join("scripts").join("init-tunnel.ps1");
         if !script.is_file() {
             return Err(format!("Tunnel init script not found: {}", script.display()));
@@ -98,7 +93,7 @@ impl TunnelManager {
 
         log::info!(
             target: "toolhub::tunnel",
-            "Tunnel profile {} is missing; initializing it at {}",
+            "Refreshing tunnel profile {} at {}",
             profile,
             profile_path.display()
         );
