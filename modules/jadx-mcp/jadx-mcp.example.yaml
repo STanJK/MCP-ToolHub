@@ -1,0 +1,10 @@
+version: 1
+
+# 0xdad0/jadx-mcp runs inside JADX GUI as a local Streamable HTTP MCP server.
+# This dedicated module intentionally accepts loopback endpoints only.
+url: 'http://127.0.0.1:8811/mcp'
+
+# Explicit local trust policy for the upstream JADX MCP catalog.
+allow_tools:
+  - '*'
+deny_tools: []
