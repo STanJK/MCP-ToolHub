@@ -113,7 +113,7 @@ impl TunnelManager {
         let lower = line.to_lowercase();
         let mut state = inner.lock().unwrap_or_else(|error| error.into_inner());
         if lower.contains("dispatcher forwarded command")
-            || lower.contains("component":"dispatcher")
+            || lower.contains("\"component\":\"dispatcher\"")
             || lower.contains("connected")
             || lower.contains("connection established")
         {
