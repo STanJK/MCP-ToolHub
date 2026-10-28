@@ -23,6 +23,17 @@ servers:
       - '*'
     deny_tools: []
 
+  # Local JADX GUI MCP plugin (0xdad0/jadx-mcp).
+  # Keep this bound to loopback; the plugin has no authentication layer.
+  jadx:
+    enabled: false
+    url: 'http://127.0.0.1:8811/mcp'
+    allow_insecure_http: true
+    headers: {}
+    allow_tools:
+      - '*'
+    deny_tools: []
+
   # another-server:
   #   enabled: false
   #   url: 'https://another.example.com/mcp'
