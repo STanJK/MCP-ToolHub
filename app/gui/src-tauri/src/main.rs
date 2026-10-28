@@ -59,11 +59,12 @@ fn dashboard_snapshot(runtime: State<'_, AppRuntime>) -> DashboardSnapshot {
         }
     };
 
+    let active_tunnel = tunnel.phase == "running" || tunnel.phase == "external";
     let overall_status = if !config_ok {
         "error"
-    } else if tunnel.phase == "running" && tunnel.connection == "connected" {
+    } else if active_tunnel && tunnel.connection == "connected" {
         "ready"
-    } else if tunnel.phase == "running" {
+    } else if active_tunnel {
         "degraded"
     } else {
         tunnel.phase.as_str()
