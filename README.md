@@ -1,6 +1,6 @@
 # MCP-ToolHub
 
-A small local MCP capability broker for exposing selected workstation capabilities without turning the machine into a general-purpose remote shell. Current modules cover fixed local build operations, local child-MCP proxies for JLCEDA Pro and IDA Pro, and a remote Streamable HTTP MCP proxy with fixed static authentication.
+A small local MCP capability broker for exposing selected workstation capabilities without turning the machine into a general-purpose remote shell. Current modules cover fixed local build operations, local MCP integrations for JLCEDA Pro, IDA Pro, and JADX, plus a remote Streamable HTTP MCP proxy with fixed static authentication.
 
 ## Architecture
 
@@ -16,16 +16,16 @@ official openai/tunnel-client
         v
 MCP-ToolHub Core
         |
-        +---------------+---------------+---------------+
-        |               |               |               |
-        v               v               v               v
-   Local Build      JLCEDA Pro       IDA Pro        Remote MCP
-        |               |               |               |
- fixed project +   lceda-pro MCP   ida-pro-mcp    HTTPS + static
- fixed operation        |            stdio           headers
-        |               v               |               |
-        v          JLCEDA editor        v               v
- local toolchain                    IDA GUI       remote server
+        +---------------+---------------+---------------+---------------+
+        |               |               |               |               |
+        v               v               v               v               v
+   Local Build      JLCEDA Pro       IDA Pro          JADX         Remote MCP
+        |               |               |               |               |
+ fixed project +   lceda-pro MCP   ida-pro-mcp    local HTTP      HTTPS + static
+ fixed operation        |            stdio        MCP facade         headers
+        |               v               |               |               |
+        v          JLCEDA editor        v               v               v
+ local toolchain                    IDA GUI         JADX GUI       remote server
 ```
 
 The tunnel layer is not reimplemented here. MCP-ToolHub uses OpenAI's official `openai/tunnel-client`.
@@ -398,6 +398,42 @@ When multiple IDA instances are running, add `--ida-rpc http://127.0.0.1:<port>`
 The upstream project currently recommends the official Hex-Rays IDA MCP server for new deployments and describes this GUI-plugin path as transitional. The ToolHub module is intentionally isolated so the upstream implementation can be swapped later.
 
 See `docs/IDA_PRO_MCP.md` for the exact runtime and trust model.
+## JADX / 0xdad0 jadx-mcp local proxy
+
+ToolHub integrates the local `0xdad0/jadx-mcp` plugin through a dedicated module rather than `remote-mcp`.
+
+```text
+ChatGPT
+  -> OpenAI Secure MCP Tunnel
+  -> MCP-ToolHub
+  -> jadx_mcp_status / discover / call
+  -> http://127.0.0.1:8811/mcp
+  -> jadx-mcp plugin
+  -> JADX GUI
+  -> current APK / DEX / JAR
+```
+
+The connector-visible surface is fixed:
+
+```text
+jadx_mcp_status
+jadx_mcp_discover
+jadx_mcp_call
+```
+
+The module only accepts loopback endpoints and discovers upstream JADX schemas on demand.
+
+Create the local config:
+
+```powershell
+Copy-Item .\modules\jadx-mcp\jadx-mcp.example.yaml `
+          .\modules\jadx-mcp\jadx-mcp.local.yaml
+```
+
+Then enable `modules.jadx-mcp` in `toolhub.local.yaml`.
+
+See `docs/JADX_MCP.md`.
+
 ## Remote MCP proxy
 
 `remote-mcp` is a generic multi-server forwarding module exposed through a fixed facade:
@@ -421,9 +457,9 @@ ChatGPT cloud
 
 `remote_mcp_discover` returns upstream schemas only on demand. Remote backend outages or missing runtime secrets do not change the connector-visible three-tool facade.
 
-Local Streamable HTTP backends can use the same facade. The current JADX GUI integration runs `0xdad0/jadx-mcp` on `http://127.0.0.1:8811/mcp` as the named `jadx` profile.
+Local GUI backends are kept out of `remote-mcp`; JADX has its own dedicated `jadx-mcp` module.
 
-See `docs/REMOTE_MCP.md` and `docs/JADX_MCP.md`.
+See `docs/REMOTE_MCP.md`.
 ## OpenAI Secure MCP Tunnel
 
 Install the official tunnel client release and verify its SHA-256:
