@@ -3,11 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "engines": {
-    "node": ">=20"
-  },
+  "engines": { "node": ">=20" },
   "scripts": {
-    "start": "node ./src/index.mjs"
+    "start": "node ./src/index.mjs",
+    "gui:dev": "npm --prefix ./app/gui run tauri:dev",
+    "gui:build": "npm --prefix ./app/gui run tauri:build"
   },
   "dependencies": {
     "@modelcontextprotocol/server": "^2.3.1",

@@ -2,4 +2,6 @@ node_modules/
 .toolhub/
 toolhub.local.yaml
 modules/*/*.local.yaml
+app/gui/dist/
+app/gui/src-tauri/target/
 *.log
