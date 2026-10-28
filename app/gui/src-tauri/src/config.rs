@@ -44,9 +44,13 @@ pub struct ModuleConfigView {
 pub fn repo_root() -> Result<PathBuf, String> {
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     manifest
-        .join("../../..")
-        .canonicalize()
-        .map_err(|error| format!("Failed to resolve ToolHub repository root: {error}"))
+        .ancestors()
+        .nth(3)
+        .map(Path::to_path_buf)
+        .ok_or_else(|| format!(
+            "Failed to resolve ToolHub repository root from {}",
+            manifest.display()
+        ))
 }
 
 pub fn toolhub_config_path(repo_root: &Path) -> PathBuf {
