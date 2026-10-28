@@ -172,13 +172,8 @@ impl TunnelManager {
 
         let mut command = Command::new("powershell.exe");
         command
-            .args([
-                "-NoProfile",
-                "-ExecutionPolicy",
-                "Bypass",
-                "-File",
-                &script.to_string_lossy(),
-            ])
+            .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-File"])
+            .arg(&script)
             .current_dir(&self.repo_root)
             .env("TOOLHUB_CONFIG", &self.config_path)
             .stdout(Stdio::piped())
