@@ -166,9 +166,10 @@ ToolHub can aggregate trusted local or remote MCP servers through module-specifi
 Current proxy modules:
 
 - `lceda-pro`: official JLCEDA Pro MCP child;
-- `ida-pro`: `mrexodia/ida-pro-mcp` stdio proxy for the legacy in-IDA GUI plugin.
+- `ida-pro`: `mrexodia/ida-pro-mcp` stdio proxy for the legacy in-IDA GUI plugin;
+- `jadx-mcp`: loopback Streamable HTTP proxy for `0xdad0/jadx-mcp` running inside JADX GUI.
 
-These modules discover their upstream tool catalogs at ToolHub startup, mirror each permitted upstream JSON input schema into Core, and return native MCP `CallToolResult` values.
+`lceda-pro` still mirrors its permitted upstream catalog at startup. `ida-pro` and `jadx-mcp` instead expose fixed facades and discover upstream schemas only on demand. Native MCP `CallToolResult` values are forwarded without translating backend content.
 
 The executable, argv, and allow/deny policy are local configuration. Remote callers can invoke only the mirrored tool names and cannot alter the child process command line.
 
@@ -176,7 +177,9 @@ Each proxy keeps one process-global child runtime per effective local configurat
 
 For `ida-pro`, the child `ida-pro-mcp` process uses upstream instance discovery and proxies requests into the MCP server hosted by the running IDA GUI plugin. ToolHub does not parse Hex-Rays discovery files or speak the plugin's HTTP protocol directly. Unlike ordinary mirroring proxies, IDA is exposed through a fixed `status / discover / call` facade so the connector does not carry the full upstream schema set on every turn and the catalog remains stable when IDA opens or closes.
 
-`remote-mcp` uses the same fixed-facade principle for remote Streamable HTTP servers. Server profiles, URLs, credentials, and allow/deny policy remain local configuration; `status / discover / call` are the only connector-visible actions. Upstream schemas are fetched only on demand.
+`jadx-mcp` uses the same fixed-facade principle for the local JADX GUI backend. Its endpoint is local configuration and is restricted to loopback hosts; `status / discover / call` are the only connector-visible actions.
+
+`remote-mcp` is reserved for remote Streamable HTTP servers. Server profiles, URLs, credentials, and allow/deny policy remain local configuration; `status / discover / call` are the only connector-visible actions. Upstream schemas are fetched only on demand.
 ## Credential state
 
 v0.1 intentionally permits:
