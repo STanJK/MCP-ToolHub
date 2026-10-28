@@ -421,7 +421,9 @@ ChatGPT cloud
 
 `remote_mcp_discover` returns upstream schemas only on demand. Remote backend outages or missing runtime secrets do not change the connector-visible three-tool facade.
 
-See `docs/REMOTE_MCP.md`.
+Local Streamable HTTP backends can use the same facade. The current JADX GUI integration runs `0xdad0/jadx-mcp` on `http://127.0.0.1:8811/mcp` as the named `jadx` profile.
+
+See `docs/REMOTE_MCP.md` and `docs/JADX_MCP.md`.
 ## OpenAI Secure MCP Tunnel
 
 Install the official tunnel client release and verify its SHA-256:
@@ -501,6 +503,7 @@ docs/
   JLCEDA_MCP.md
   IDA_PRO_MCP.md
   REMOTE_MCP.md
+  JADX_MCP.md
 
 toolhub.example.yaml
 toolhub.local.yaml              # gitignored
