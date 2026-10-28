@@ -1,11 +1,16 @@
-use std::io::{BufRead, BufReader};
-use std::path::PathBuf;
+use std::io::{BufRead, BufReader, Read, Write};
+use std::net::TcpStream;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
+use sysinfo::{Pid, System};
+
+const HEALTH_ADDR: &str = "127.0.0.1:8080";
+const HEALTH_PORT: u16 = 8080;
 
 #[cfg(windows)]
 fn hide_window(command: &mut Command) {
@@ -51,6 +56,13 @@ impl Default for Inner {
     }
 }
 
+#[derive(Debug)]
+struct PortOwner {
+    pid: u32,
+    executable: Option<PathBuf>,
+    expected_toolhub_client: bool,
+}
+
 #[derive(Clone)]
 pub struct TunnelManager {
     repo_root: PathBuf,
@@ -60,7 +72,13 @@ pub struct TunnelManager {
 
 impl TunnelManager {
     pub fn new(repo_root: PathBuf, config_path: PathBuf) -> Self {
-        Self { repo_root, config_path, inner: Arc::new(Mutex::new(Inner::default())) }
+        let manager = Self {
+            repo_root,
+            config_path,
+            inner: Arc::new(Mutex::new(Inner::default())),
+        };
+        manager.start_external_observer();
+        manager
     }
 
     fn current_profile_name(&self) -> Result<String, String> {
@@ -78,14 +96,167 @@ impl TunnelManager {
             .join(format!("{profile}.yaml")))
     }
 
+    fn expected_client_path(&self) -> PathBuf {
+        self.repo_root
+            .join(".toolhub")
+            .join("bin")
+            .join("tunnel-client.exe")
+    }
+
+    fn normalize_path(path: &Path) -> String {
+        path.canonicalize()
+            .unwrap_or_else(|_| path.to_path_buf())
+            .to_string_lossy()
+            .replace('/', "\\")
+            .trim_start_matches(r"\\?\")
+            .to_lowercase()
+    }
+
+    fn listener_pid() -> Option<u32> {
+        let mut command = Command::new("netstat.exe");
+        command.args(["-ano", "-p", "tcp"]);
+        hide_window(&mut command);
+        let output = command.output().ok()?;
+        if !output.status.success() {
+            return None;
+        }
+
+        for line in String::from_utf8_lossy(&output.stdout).lines() {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() < 5 || !parts[0].eq_ignore_ascii_case("TCP") {
+                continue;
+            }
+            if !parts[3].eq_ignore_ascii_case("LISTENING") {
+                continue;
+            }
+            let local = parts[1];
+            let Some(colon) = local.rfind(':') else {
+                continue;
+            };
+            let Ok(port) = local[colon + 1..].parse::<u16>() else {
+                continue;
+            };
+            if port != HEALTH_PORT {
+                continue;
+            }
+            if let Ok(pid) = parts[4].parse::<u32>() {
+                return Some(pid);
+            }
+        }
+        None
+    }
+
+    fn process_path(pid: u32) -> Option<PathBuf> {
+        let mut system = System::new_all();
+        system.refresh_all();
+        system
+            .process(Pid::from_u32(pid))
+            .and_then(|process| process.exe())
+            .map(Path::to_path_buf)
+    }
+
+    fn port_owner(&self) -> Option<PortOwner> {
+        let pid = Self::listener_pid()?;
+        let executable = Self::process_path(pid);
+        let expected = executable.as_ref().is_some_and(|path| {
+            Self::normalize_path(path) == Self::normalize_path(&self.expected_client_path())
+        });
+        Some(PortOwner {
+            pid,
+            executable,
+            expected_toolhub_client: expected,
+        })
+    }
+
+    fn health_ready() -> bool {
+        let Ok(mut stream) = TcpStream::connect_timeout(
+            &HEALTH_ADDR.parse().expect("static health address"),
+            Duration::from_millis(350),
+        ) else {
+            return false;
+        };
+        let _ = stream.set_read_timeout(Some(Duration::from_millis(350)));
+        let _ = stream.set_write_timeout(Some(Duration::from_millis(350)));
+        if stream
+            .write_all(b"GET /readyz HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n")
+            .is_err()
+        {
+            return false;
+        }
+        let mut response = [0u8; 256];
+        let Ok(count) = stream.read(&mut response) else {
+            return false;
+        };
+        let head = String::from_utf8_lossy(&response[..count]);
+        head.lines()
+            .next()
+            .is_some_and(|line| line.contains(" 200 "))
+    }
+
+    fn start_external_observer(&self) {
+        let manager = self.clone();
+        thread::Builder::new()
+            .name("ToolHubTunnelObserver".to_string())
+            .spawn(move || loop {
+                thread::sleep(Duration::from_secs(2));
+
+                let should_probe = {
+                    let mut inner = manager.inner.lock().unwrap_or_else(|error| error.into_inner());
+                    Self::refresh_locked(&mut inner);
+                    inner.child.is_none() && inner.phase != "starting"
+                };
+                if !should_probe {
+                    continue;
+                }
+
+                let owner = manager.port_owner();
+                let mut inner = manager.inner.lock().unwrap_or_else(|error| error.into_inner());
+                if inner.child.is_some() || inner.phase == "starting" {
+                    continue;
+                }
+
+                match owner {
+                    Some(owner) if owner.expected_toolhub_client => {
+                        inner.phase = "external".to_string();
+                        inner.connection = if Self::health_ready() {
+                            "connected".to_string()
+                        } else {
+                            "degraded".to_string()
+                        };
+                        inner.pid = Some(owner.pid);
+                        inner.started_at_ms = None;
+                        inner.last_error = None;
+                    }
+                    Some(owner) => {
+                        inner.phase = "blocked".to_string();
+                        inner.connection = "degraded".to_string();
+                        inner.pid = Some(owner.pid);
+                        let executable = owner
+                            .executable
+                            .as_ref()
+                            .map(|path| path.display().to_string())
+                            .unwrap_or_else(|| "<unknown>".to_string());
+                        inner.last_error = Some(format!(
+                            "{HEALTH_ADDR} is owned by PID {} ({executable}), not ToolHub tunnel-client",
+                            owner.pid
+                        ));
+                    }
+                    None => {
+                        if inner.phase == "external" || inner.phase == "blocked" {
+                            inner.phase = "stopped".to_string();
+                            inner.connection = "unknown".to_string();
+                            inner.pid = None;
+                            inner.last_error = None;
+                        }
+                    }
+                }
+            })
+            .expect("failed to start tunnel observer");
+    }
+
     fn ensure_profile(&self) -> Result<(), String> {
         let profile = self.current_profile_name()?;
         let profile_path = self.profile_path(&profile)?;
-
-        // Reinitialize on every explicit Start/Restart. A profile file can exist
-        // while being stale, incomplete, or tied to an older tunnel command.
-        // The local config is the authority; init-tunnel.ps1 deterministically
-        // rewrites the official tunnel-client profile from that config.
         let script = self.repo_root.join("scripts").join("init-tunnel.ps1");
         if !script.is_file() {
             return Err(format!("Tunnel init script not found: {}", script.display()));
@@ -107,7 +278,6 @@ impl TunnelManager {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
         hide_window(&mut command);
-        hide_window(&mut command);
 
         let output = command
             .output()
@@ -126,7 +296,6 @@ impl TunnelManager {
                 output.status.code()
             ));
         }
-
         if !profile_path.is_file() {
             return Err(format!(
                 "Tunnel profile init reported success but profile is still missing: {}",
@@ -143,13 +312,18 @@ impl TunnelManager {
     }
 
     fn now_ms() -> u64 {
-        SystemTime::now().duration_since(UNIX_EPOCH)
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
             .map(|duration| duration.as_millis().min(u64::MAX as u128) as u64)
             .unwrap_or(0)
     }
 
     fn refresh_locked(inner: &mut Inner) {
-        let exit = inner.child.as_mut().and_then(|child| child.try_wait().ok().flatten());
+        let exit = inner
+            .child
+            .as_mut()
+            .and_then(|child| child.try_wait().ok().flatten());
+
         if let Some(status) = exit {
             inner.last_exit_code = status.code();
             inner.child = None;
@@ -178,28 +352,83 @@ impl TunnelManager {
         }
     }
 
-    fn stop_locked(inner: &mut Inner) {
-        let Some(mut child) = inner.child.take() else { return; };
+    fn stop_managed_locked(inner: &mut Inner) {
+        let Some(mut child) = inner.child.take() else {
+            return;
+        };
         let pid = child.id();
         log::info!(target: "toolhub::tunnel", "Stopping managed tunnel process tree PID {pid}");
-        let status = Command::new("taskkill.exe")
-            .args(["/PID", &pid.to_string(), "/T", "/F"])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
+        let mut command = Command::new("taskkill.exe");
+        command.args(["/PID", &pid.to_string(), "/T", "/F"]);
+        command.stdout(Stdio::null()).stderr(Stdio::null());
+        hide_window(&mut command);
+        let status = command.status();
+
         if let Err(error) = status {
             log::warn!(target: "toolhub::tunnel", "taskkill failed for PID {pid}: {error}");
             let _ = child.kill();
         }
         let _ = child.wait();
+
         inner.pid = None;
         inner.phase = "stopped".to_string();
         inner.connection = "unknown".to_string();
     }
 
+    fn stop_external_if_toolhub(&self) -> Result<(), String> {
+        let Some(owner) = self.port_owner() else {
+            return Ok(());
+        };
+
+        if !owner.expected_toolhub_client {
+            let executable = owner
+                .executable
+                .as_ref()
+                .map(|path| path.display().to_string())
+                .unwrap_or_else(|| "<unknown>".to_string());
+            return Err(format!(
+                "Refusing to kill PID {} on {HEALTH_ADDR}: executable is {executable}, not {}",
+                owner.pid,
+                self.expected_client_path().display()
+            ));
+        }
+
+        log::info!(
+            target: "toolhub::tunnel",
+            "Taking over existing ToolHub tunnel-client PID {}",
+            owner.pid
+        );
+
+        let mut command = Command::new("taskkill.exe");
+        command.args(["/PID", &owner.pid.to_string(), "/T", "/F"]);
+        command.stdout(Stdio::null()).stderr(Stdio::null());
+        hide_window(&mut command);
+        let status = command
+            .status()
+            .map_err(|error| format!("Failed to stop existing tunnel PID {}: {error}", owner.pid))?;
+        if !status.success() {
+            return Err(format!(
+                "taskkill failed while taking over existing tunnel PID {}",
+                owner.pid
+            ));
+        }
+
+        for _ in 0..20 {
+            if Self::listener_pid().is_none() {
+                return Ok(());
+            }
+            thread::sleep(Duration::from_millis(100));
+        }
+        Err(format!(
+            "Existing tunnel PID {} exited but {HEALTH_ADDR} is still occupied",
+            owner.pid
+        ))
+    }
+
     fn observe_line(inner: &Arc<Mutex<Inner>>, line: &str) {
         let lower = line.to_lowercase();
         let mut state = inner.lock().unwrap_or_else(|error| error.into_inner());
+
         if lower.contains("dispatcher forwarded command")
             || lower.contains("\"component\":\"dispatcher\"")
             || lower.contains("connected")
@@ -207,6 +436,7 @@ impl TunnelManager {
         {
             state.connection = "connected".to_string();
         }
+
         if lower.contains("disconnected")
             || lower.contains("connectionrefused")
             || lower.contains("connection refused")
@@ -235,11 +465,21 @@ impl TunnelManager {
         {
             let mut inner = self.inner.lock().unwrap_or_else(|error| error.into_inner());
             Self::refresh_locked(&mut inner);
-            Self::stop_locked(&mut inner);
+            Self::stop_managed_locked(&mut inner);
             inner.phase = "starting".to_string();
             inner.connection = "observing".to_string();
+            inner.pid = None;
             inner.last_error = None;
             inner.last_exit_code = None;
+        }
+
+        if let Err(error) = self.stop_external_if_toolhub() {
+            let mut inner = self.inner.lock().unwrap_or_else(|poison| poison.into_inner());
+            inner.phase = "blocked".to_string();
+            inner.connection = "degraded".to_string();
+            inner.last_error = Some(error.clone());
+            log::error!(target: "toolhub::tunnel", "{error}");
+            return Err(error);
         }
 
         if let Err(error) = self.ensure_profile() {
@@ -275,6 +515,7 @@ impl TunnelManager {
             .env("TOOLHUB_CONFIG", &self.config_path)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
+        hide_window(&mut command);
 
         let mut child = command.spawn().map_err(|error| {
             let message = format!("Failed to start run-tunnel.ps1: {error}");
