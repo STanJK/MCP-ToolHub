@@ -24,9 +24,9 @@ type Tone = "neutral" | "info" | "success" | "warning" | "danger";
 function toneFor(status?: string | null): Tone {
   const value = (status ?? "").toLowerCase();
   if (["ready", "running", "connected", "completed"].includes(value)) return "success";
-  if (["starting", "checking", "observing"].includes(value)) return "info";
+  if (["starting", "checking", "observing", "external"].includes(value)) return "info";
   if (["degraded", "offline", "external", "unknown"].includes(value)) return "warning";
-  if (["error", "failed", "faulted"].includes(value)) return "danger";
+  if (["error", "failed", "faulted", "blocked"].includes(value)) return "danger";
   return "neutral";
 }
 
