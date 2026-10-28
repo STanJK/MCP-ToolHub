@@ -18,6 +18,10 @@ modules:
     enabled: false
     config: ./modules/ida-pro/ida-pro.local.yaml
 
+  jadx-mcp:
+    enabled: false
+    config: ./modules/jadx-mcp/jadx-mcp.local.yaml
+
   remote-mcp:
     enabled: false
     config: ./modules/remote-mcp/remote-mcp.local.yaml
