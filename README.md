@@ -283,11 +283,14 @@ C:\STanJK\AIWorkspace\DSH\DSH_Test
 Allowlisted operations:
 
 ```text
+cargo-init
 git-status
 cargo-check
 cargo-build
 cargo-test
 ```
+
+`cargo-init` is the restricted `cargo-init-rust` builtin. It refuses to overwrite an existing `Cargo.toml`, then runs a fixed Rust binary initialization followed by `cargo generate-lockfile --offline`. This makes a fresh project immediately compatible with the locked check/build/test operations without exposing arbitrary Cargo arguments.
 
 The Cargo operations use `--workspace --locked`, so DSH can exercise the normal ToolHub build path without receiving arbitrary command execution.
 
