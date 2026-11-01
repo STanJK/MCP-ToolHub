@@ -10,7 +10,8 @@
     "start": "node ./src/index.mjs",
     "gui:dev": "npm --prefix ./app/gui run tauri:dev",
     "gui:build": "npm --prefix ./app/gui run tauri:build",
-    "start:local": "node ./src/index.mjs --local"
+    "start:local": "node ./src/index.mjs --local",
+    "setup:dsh-test": "node ./scripts/add-dsh-test-local-build.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/server": "^2.3.1",
