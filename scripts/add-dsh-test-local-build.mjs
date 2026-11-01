@@ -35,6 +35,11 @@ config.projects.DSH_Test = {
   description: "Local Rust build target for DSH tool-use validation",
   root: projectRoot,
   operations: {
+    "cargo-init": {
+      description: "Initialize DSH_Test as a Rust binary project and create an offline Cargo.lock",
+      builtin: "cargo-init-rust",
+      package_name: "dsh_test"
+    },
     "git-status": {
       description: "Show DSH_Test git status",
       program: "git.exe",
