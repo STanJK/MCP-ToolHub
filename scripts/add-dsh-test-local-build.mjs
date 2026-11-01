@@ -14,7 +14,7 @@ const projectRoot = path.resolve(
   process.env.DSH_TEST_ROOT ??
     "C:\\STanJK\\AIWorkspace\\DSH\\DSH_Test"
 );
-const force = process.argv.includes("--force");
+const force = process.argv.includes("--force") || process.env.npm_config_force === "true";
 
 const raw = await readFile(configPath, "utf8");
 const config = parse(raw);
