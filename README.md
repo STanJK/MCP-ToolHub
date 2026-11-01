@@ -234,6 +234,63 @@ For local stdio MCP testing:
 npx @modelcontextprotocol/inspector node .\src\index.mjs
 ```
 
+## Local mode / DeepSeek Harness
+
+ToolHub can run directly as a local stdio MCP server without OpenAI Secure MCP Tunnel:
+
+```powershell
+npm run start:local
+```
+
+or equivalently:
+
+```powershell
+node .\src\index.mjs --local
+```
+
+`--local` is a runtime override. It deliberately bypasses validation of the `tunnel` block while keeping the same module registry and Local Build allowlists. Existing tunnel-mode configuration remains valid and unchanged.
+
+This is the preferred integration for a local DeepSeek Harness (DSH) process: DSH owns the stdio child lifecycle, ToolHub owns the capability policy, and no OpenAI control-plane connection is required for local tool calls.
+
+Example DSH `cordis.patch.yml` entry:
+
+```yaml
+- insert:
+    - id: mcp-toolhub-local
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: toolhub
+        transport: stdio
+        command: node
+        args:
+          - 'C:/STanJK/Development/MCP-ToolHub/src/index.mjs'
+          - --local
+        cwd: 'C:/STanJK/Development/MCP-ToolHub'
+        env:
+          TOOLHUB_CONFIG: 'C:/STanJK/Development/MCP-ToolHub/toolhub.local.yaml'
+```
+
+With `serverName: toolhub`, DSH exposes ToolHub actions as `mcp__toolhub__<tool>`.
+
+### DSH_Test Local Build target
+
+The Local Build example includes a Rust validation project:
+
+```text
+C:\STanJK\AIWorkspace\DSH\DSH_Test
+```
+
+Allowlisted operations:
+
+```text
+git-status
+cargo-check
+cargo-build
+cargo-test
+```
+
+The Cargo operations use `--workspace --locked`, so DSH can exercise the normal ToolHub build path without receiving arbitrary command execution.
+
 ## Local Build project: RA3MCP
 
 RA3MCP is wired directly to the underlying CMake / Cargo toolchains rather than through `Build.ps1`, `Test.ps1`, or `Stage.ps1`.
