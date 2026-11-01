@@ -150,3 +150,40 @@ projects:
           - -p
           - ra3ctl
 
+
+  DSH_Test:
+    description: Local Rust build target for DSH tool-use validation
+    root: 'C:\STanJK\AIWorkspace\DSH\DSH_Test'
+
+    operations:
+      git-status:
+        description: Show DSH_Test git status
+        program: git.exe
+        args:
+          - status
+          - --short
+          - --branch
+
+      cargo-check:
+        description: Check DSH_Test with locked dependency resolution
+        program: cargo.exe
+        args:
+          - check
+          - --workspace
+          - --locked
+
+      cargo-build:
+        description: Build DSH_Test with locked dependency resolution
+        program: cargo.exe
+        args:
+          - build
+          - --workspace
+          - --locked
+
+      cargo-test:
+        description: Test DSH_Test with locked dependency resolution
+        program: cargo.exe
+        args:
+          - test
+          - --workspace
+          - --locked
