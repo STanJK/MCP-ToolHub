@@ -6,6 +6,7 @@ import process from "node:process";
 import { parse } from "yaml";
 import { z } from "zod";
 import { runGitSyncGenerated } from "./builtins/git-sync-generated.mjs";
+import { runCargoInitRust } from "./builtins/cargo-init-rust.mjs";
 
 const jobs = new Map();
 const activeJobByProject = new Map();
@@ -56,11 +57,22 @@ function getOperation(project, operationId) {
   }
 
   if (hasBuiltin) {
-    if (operation.builtin !== "git-sync-generated") {
+    if (!["git-sync-generated", "cargo-init-rust"].includes(operation.builtin)) {
       throw new Error(`Operation ${operationId} uses unsupported builtin: ${operation.builtin}`);
     }
     if (operation.args !== undefined || operation.cwd !== undefined || operation.program !== undefined) {
       throw new Error(`Builtin operation ${operationId} cannot define program, args, or cwd`);
+    }
+    if (operation.package_name !== undefined) {
+      if (operation.builtin !== "cargo-init-rust") {
+        throw new Error(`Operation ${operationId} package_name is only valid for cargo-init-rust`);
+      }
+      if (
+        typeof operation.package_name !== "string" ||
+        !/^[a-z][a-z0-9_-]*$/.test(operation.package_name)
+      ) {
+        throw new Error(`Operation ${operationId} has invalid package_name`);
+      }
     }
     return operation;
   }
@@ -338,7 +350,7 @@ function finalizeBuiltinJob(job, result) {
   pruneTerminalJobs();
 }
 
-function startBuiltinOperation(job, cwd) {
+function startBuiltinOperation(job, cwd, operation) {
   job.status = "running";
 
   job.timeoutTimer = setTimeout(() => {
@@ -349,7 +361,7 @@ function startBuiltinOperation(job, cwd) {
 
   queueMicrotask(async () => {
     try {
-      const result = await runGitSyncGenerated({
+      const context = {
         cwd,
         isCancelled: () => job.cancelRequested,
         onChild: (child) => {
@@ -359,7 +371,19 @@ function startBuiltinOperation(job, cwd) {
         onStdout: (chunk) => appendBounded(job.stdoutState, chunk, job.maxOutputBytes),
         onStderr: (chunk) => appendBounded(job.stderrState, chunk, job.maxOutputBytes),
         onLog: (message) => appendBounded(job.stdoutState, message, job.maxOutputBytes)
-      });
+      };
+
+      let result;
+      if (operation.builtin === "git-sync-generated") {
+        result = await runGitSyncGenerated(context);
+      } else if (operation.builtin === "cargo-init-rust") {
+        result = await runCargoInitRust(context, {
+          packageName: operation.package_name
+        });
+      } else {
+        throw new Error(`Unsupported builtin at runtime: ${operation.builtin}`);
+      }
+
       finalizeBuiltinJob(job, result);
     } catch (error) {
       finalizeBuiltinJob(job, {
@@ -423,8 +447,8 @@ function startOperation(config, projectId, project, operationId, operation) {
   jobs.set(runId, job);
   activeJobByProject.set(projectId, runId);
 
-  if (operation.builtin === "git-sync-generated") {
-    return startBuiltinOperation(job, cwd);
+  if (operation.builtin) {
+    return startBuiltinOperation(job, cwd, operation);
   }
 
   let child;
