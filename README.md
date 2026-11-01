@@ -291,6 +291,19 @@ cargo-test
 
 The Cargo operations use `--workspace --locked`, so DSH can exercise the normal ToolHub build path without receiving arbitrary command execution.
 
+To merge this project into the gitignored local runtime config without replacing the other registered projects:
+
+```powershell
+npm run setup:dsh-test
+```
+
+Override the default project root when needed:
+
+```powershell
+$env:DSH_TEST_ROOT = 'C:\path\to\DSH_Test'
+npm run setup:dsh-test
+```
+
 ## Local Build project: RA3MCP
 
 RA3MCP is wired directly to the underlying CMake / Cargo toolchains rather than through `Build.ps1`, `Test.ps1`, or `Stage.ps1`.
