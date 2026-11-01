@@ -9,7 +9,22 @@ export function getToolHubConfigPath() {
   );
 }
 
-export async function loadToolHubConfig(configPath = getToolHubConfigPath()) {
+function validateTunnelConfig(tunnel) {
+  if (!tunnel || typeof tunnel !== "object") {
+    throw new Error("Invalid ToolHub config: tunnel is required in tunnel mode");
+  }
+
+  for (const key of ["name", "id", "raw_key"]) {
+    if (typeof tunnel[key] !== "string" || tunnel[key].length === 0) {
+      throw new Error(`Invalid ToolHub config: tunnel.${key} is required in tunnel mode`);
+    }
+  }
+}
+
+export async function loadToolHubConfig(
+  configPath = getToolHubConfigPath(),
+  { modeOverride } = {}
+) {
   const resolvedPath = path.resolve(configPath);
   const raw = await readFile(resolvedPath, "utf8");
   const config = parse(raw);
@@ -20,14 +35,14 @@ export async function loadToolHubConfig(configPath = getToolHubConfigPath()) {
   if (config.version !== 1) {
     throw new Error("Invalid ToolHub config: version must be 1");
   }
-  if (!config.tunnel || typeof config.tunnel !== "object") {
-    throw new Error("Invalid ToolHub config: tunnel is required");
+
+  const mode = modeOverride ?? config.mode ?? "tunnel";
+  if (mode !== "tunnel" && mode !== "local") {
+    throw new Error('Invalid ToolHub config: mode must be "tunnel" or "local"');
   }
 
-  for (const key of ["name", "id", "raw_key"]) {
-    if (typeof config.tunnel[key] !== "string" || config.tunnel[key].length === 0) {
-      throw new Error(`Invalid ToolHub config: tunnel.${key} is required`);
-    }
+  if (mode === "tunnel") {
+    validateTunnelConfig(config.tunnel);
   }
 
   if (!config.modules || typeof config.modules !== "object") {
@@ -36,6 +51,7 @@ export async function loadToolHubConfig(configPath = getToolHubConfigPath()) {
 
   return {
     ...config,
+    mode,
     __meta: {
       configPath: resolvedPath,
       configDir: path.dirname(resolvedPath)
