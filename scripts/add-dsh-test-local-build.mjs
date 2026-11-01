@@ -1,9 +1,11 @@
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
+import { fileURLToPath } from "node:url";
 import { parse, stringify } from "yaml";
 
-const repoRoot = path.resolve(import.meta.dirname, "..");
+const scriptDir = path.dirname(fileURLToPath(import.meta.url));
+const repoRoot = path.resolve(scriptDir, "..");
 const configPath = path.resolve(
   process.env.TOOLHUB_LOCAL_BUILD_CONFIG ??
     path.join(repoRoot, "modules", "local-build", "local-build.local.yaml")
