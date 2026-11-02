@@ -12,7 +12,8 @@
     "gui:build": "npm --prefix ./app/gui run tauri:build",
     "start:local": "node ./src/index.mjs --local",
     "setup:dsh-test": "node ./scripts/add-dsh-test-local-build.mjs",
-    "setup:dsh-skill": "node ./scripts/install-dsh-toolhub-skill.mjs"
+    "setup:dsh-skill": "node ./scripts/install-dsh-toolhub-skill.mjs",
+    "setup:local-build-project": "node ./scripts/add-standard-local-build-project.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/server": "^2.3.1",
