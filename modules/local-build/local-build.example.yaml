@@ -192,3 +192,59 @@ projects:
           - test
           - --workspace
           - --locked
+
+  Edu_Pulse:
+    description: Edu_Pulse standard Local Build project
+    root: 'C:\STanJK\Development\Edu_Pulse'
+
+    operations:
+      git-status:
+        description: Show Edu_Pulse git status
+        program: git.exe
+        args:
+          - status
+          - --short
+          - --branch
+
+      git-pull:
+        description: Fast-forward Edu_Pulse from its configured upstream
+        program: git.exe
+        args:
+          - pull
+          - --ff-only
+
+      git-sync-generated:
+        description: Safely recover a locally dirty Cargo.lock when origin/main contains the canonical incoming lockfile
+        builtin: git-sync-generated
+
+      cargo-check:
+        description: Cargo workspace check with locked dependency resolution
+        program: cargo.exe
+        args:
+          - check
+          - --workspace
+          - --locked
+
+      cargo-build:
+        description: Cargo workspace build with locked dependency resolution
+        program: cargo.exe
+        args:
+          - build
+          - --workspace
+          - --locked
+
+      cargo-test:
+        description: Cargo workspace test with locked dependency resolution
+        program: cargo.exe
+        args:
+          - test
+          - --workspace
+          - --locked
+
+      frontend-npm-build:
+        description: Build frontend from app/gui
+        cwd: app\gui
+        program: npm.cmd
+        args:
+          - run
+          - build
