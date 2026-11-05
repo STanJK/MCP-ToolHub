@@ -209,11 +209,11 @@ These correspond to the existing standalone GUI capabilities.
 
 No ToolHub route semantics are added to CC itself.
 
-## Concurrent HTTP proxy requests
+## HTTP proxy request correlation
 
 Each `http.request` carries a required `request_id`.
 
-ToolHub dispatches proxied requests independently and returns:
+ToolHub returns:
 
 ```json
 {
@@ -225,7 +225,9 @@ ToolHub dispatches proxied requests independently and returns:
 }
 ```
 
-Responses are correlated by request ID and do not require in-order completion.
+The current Windows implementation deliberately owns all session I/O on one thread. CC may pipeline multiple requests into the pipe buffer, but ToolHub dispatches and replies to them serially. Every response still echoes the matching `request_id`.
+
+This avoids concurrent synchronous `ReadFile` / `WriteFile` operations on duplicated handles for the same Named Pipe instance while remaining compatible with the v1 request-correlation contract.
 
 ## Error Mailbox
 
