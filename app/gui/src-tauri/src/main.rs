@@ -7,6 +7,7 @@ use std::time::Duration;
 use serde::Serialize;
 use tauri::{Manager, State};
 
+mod background_process;
 mod cc_pipe;
 mod config;
 mod logging;
