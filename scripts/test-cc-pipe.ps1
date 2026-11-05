@@ -73,7 +73,13 @@ $pipe = [System.IO.Pipes.NamedPipeClientStream]::new(
 
 try {
   try {
+    Write-Host "[STEP] Connecting..."
     $pipe.Connect($ConnectTimeoutMs)
+    Write-Host "[PASS] Pipe transport connected"
+
+    $pipe.ReadMode = [System.IO.Pipes.PipeTransmissionMode]::Byte
+    $pipe.ReadTimeout = $ConnectTimeoutMs
+    $pipe.WriteTimeout = $ConnectTimeoutMs
   }
   catch {
     Write-Host ""
@@ -93,19 +99,24 @@ try {
     throw
   }
 
+  Write-Host "[STEP] Waiting for ToolHub hello..."
   $hello = Read-Frame -Stream $pipe
+  Write-Host "[PASS] ToolHub hello received"
   if ($hello.type -ne "hello" -or
       $hello.protocol -ne "cc-pipe-v1" -or
       $hello.module_id -ne "toolhub") {
     throw "Unexpected ToolHub hello: $($hello | ConvertTo-Json -Compress)"
   }
 
+  Write-Host "[STEP] Sending hello-ack..."
   Write-Frame -Stream $pipe -Value @{
     type = "hello-ack"
     protocol = "cc-pipe-v1"
   }
+  Write-Host "[PASS] hello-ack sent"
 
   $requestId = 2001
+  Write-Host "[STEP] Sending GET /dashboard..."
   Write-Frame -Stream $pipe -Value @{
     type = "http.request"
     request_id = $requestId
@@ -117,6 +128,7 @@ try {
     body_b64 = $null
   }
 
+  Write-Host "[STEP] Waiting for http.response..."
   while ($true) {
     $message = Read-Frame -Stream $pipe
 
