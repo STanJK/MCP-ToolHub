@@ -272,6 +272,33 @@ app/gui/dist/index.html
 
 Both paths match `cc-module.json`.
 
+## Pipe smoke test
+
+Before the CC-side persistent router lands, the ToolHub backend can be validated directly with the repository smoke-test client.
+
+Start the backend:
+
+```powershell
+.\bin\mcp-toolhub-gui-host.exe --cc-backend --bootstrap
+```
+
+Then, from a second PowerShell:
+
+```powershell
+.\scripts\test-cc-pipe.ps1
+```
+
+The script validates:
+
+- the module-first `hello` handshake;
+- `hello-ack`;
+- length-prefixed framing;
+- request correlation;
+- `GET /dashboard` through `http.request/http.response`;
+- interleaved Error Mailbox frames.
+
+It does not issue `lifecycle.stop`.
+
 ## Onboarding
 
 After the new CC pipe-router implementation lands:
