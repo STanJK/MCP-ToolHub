@@ -35,7 +35,7 @@ let exiting = false;
 function log(level, message) {
   appendFileSync(
     logPath,
-    \`${new Date().toISOString()} ${level.toUpperCase()} ${message}\\n\`,
+    `${new Date().toISOString()} ${level.toUpperCase()} ${message}\n`,
     "utf8"
   );
 }
@@ -66,14 +66,14 @@ async function postMailbox(payload) {
     });
 
     if (!response.ok) {
-      log("warn", \`CC Error Mailbox returned HTTP ${response.status}\`);
+      log("warn", `CC Error Mailbox returned HTTP ${response.status}`);
       return false;
     }
     return true;
   } catch (error) {
     log(
       "warn",
-      \`CC Error Mailbox unavailable: ${error instanceof Error ? error.message : String(error)}\`
+      `CC Error Mailbox unavailable: ${error instanceof Error ? error.message : String(error)}`
     );
     return false;
   }
@@ -181,7 +181,7 @@ async function readinessTick() {
     await setError(
       "tunnel-not-ready",
       "ToolHub tunnel is not ready",
-      \`The tunnel runtime is alive but ${readyUrl} has not reported ready for at least 10 seconds.\`
+      `The tunnel runtime is alive but ${readyUrl} has not reported ready for at least 10 seconds.`
     );
   }
 }
@@ -209,10 +209,10 @@ async function shutdown(exitCode) {
 }
 
 async function main() {
-  writeFileSync(pidPath, \`${process.pid}\\n\`, "utf8");
+  writeFileSync(pidPath, `${process.pid}\n`, "utf8");
   log(
     "info",
-    \`CC runtime started pid=${process.pid} module=${process.env.CC_MODULE_ID || "toolhub"} root=${repoRoot}\`
+    `CC runtime started pid=${process.pid} module=${process.env.CC_MODULE_ID || "toolhub"} root=${repoRoot}`
   );
 
   if (!existsSync(toolhubConfig)) {
@@ -221,7 +221,7 @@ async function main() {
       "ToolHub configuration is missing",
       toolhubConfig
     );
-    throw new Error(\`ToolHub config not found: ${toolhubConfig}\`);
+    throw new Error(`ToolHub config not found: ${toolhubConfig}`);
   }
 
   log("info", "refreshing tunnel-client profile");
@@ -230,8 +230,8 @@ async function main() {
 
   if (initResult.error || initResult.code !== 0) {
     const detail = initResult.error
-      ? \`init-tunnel.ps1 failed to start: ${initResult.error}\`
-      : \`init-tunnel.ps1 exited with code ${initResult.code}\`;
+      ? `init-tunnel.ps1 failed to start: ${initResult.error}`
+      : `init-tunnel.ps1 exited with code ${initResult.code}`;
     await setError(
       "tunnel-profile-init-failed",
       "ToolHub tunnel profile initialization failed",
@@ -244,7 +244,7 @@ async function main() {
   child = spawnPowerShell(runScript);
 
   child.once("error", async (error) => {
-    log("error", \`run-tunnel.ps1 spawn failed: ${error.message}\`);
+    log("error", `run-tunnel.ps1 spawn failed: ${error.message}`);
     await setError(
       "tunnel-runtime-start-failed",
       "ToolHub tunnel runtime failed to start",
@@ -258,7 +258,7 @@ async function main() {
       return;
     }
 
-    const detail = \`run-tunnel.ps1 exited with code ${code ?? "null"} signal ${signal ?? "none"}\`;
+    const detail = `run-tunnel.ps1 exited with code ${code ?? "null"} signal ${signal ?? "none"}`;
     log(code === 0 ? "warn" : "error", detail);
     await setError(
       "tunnel-runtime-exited",
@@ -291,7 +291,7 @@ process.on("uncaughtException", async (error) => {
 
 process.on("unhandledRejection", async (reason) => {
   const message = reason instanceof Error ? reason.message : String(reason);
-  log("error", \`unhandled rejection: ${message}\`);
+  log("error", `unhandled rejection: ${message}`);
   await setError(
     "toolhub-cc-runtime-failed",
     "ToolHub Control Center runtime failed",
