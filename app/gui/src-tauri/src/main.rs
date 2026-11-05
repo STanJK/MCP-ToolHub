@@ -5,7 +5,7 @@ use std::thread;
 use std::time::Duration;
 
 use serde::Serialize;
-use tauri::State;
+use tauri::{Manager, State};
 
 mod cc_pipe;
 mod config;
