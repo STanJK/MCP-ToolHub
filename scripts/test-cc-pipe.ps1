@@ -78,8 +78,6 @@ try {
     Write-Host "[PASS] Pipe transport connected"
 
     $pipe.ReadMode = [System.IO.Pipes.PipeTransmissionMode]::Byte
-    $pipe.ReadTimeout = $ConnectTimeoutMs
-    $pipe.WriteTimeout = $ConnectTimeoutMs
   }
   catch {
     Write-Host ""
