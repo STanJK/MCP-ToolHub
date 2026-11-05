@@ -5,3 +5,5 @@ modules/*/*.local.yaml
 app/gui/dist/
 app/gui/src-tauri/target/
 *.log
+cc-interface/target/
+bin/cc-interface.exe
