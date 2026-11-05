@@ -13,7 +13,8 @@
     "start:local": "node ./src/index.mjs --local",
     "setup:dsh-test": "node ./scripts/add-dsh-test-local-build.mjs",
     "setup:dsh-skill": "node ./scripts/install-dsh-toolhub-skill.mjs",
-    "setup:local-build-project": "node ./scripts/add-standard-local-build-project.mjs"
+    "setup:local-build-project": "node ./scripts/add-standard-local-build-project.mjs",
+    "cc:build": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./scripts/build-cc-module.ps1"
   },
   "dependencies": {
     "@modelcontextprotocol/server": "^2.3.1",
