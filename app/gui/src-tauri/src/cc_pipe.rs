@@ -10,7 +10,6 @@ use std::time::Duration;
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use serde_json::{json, Value};
-use tauri::AppHandle;
 use windows_sys::Win32::Foundation::{
     GetLastError, ERROR_PIPE_CONNECTED, INVALID_HANDLE_VALUE,
 };
@@ -129,16 +128,17 @@ impl HttpResult {
     }
 }
 
-pub fn start(runtime: AppRuntime, app_handle: AppHandle) -> Result<(), String> {
+pub fn start(runtime: AppRuntime) -> Result<(), String> {
     let bridge = PipeBridge::new();
+    let first_pipe = create_pipe_instance()
+        .map_err(|error| format!("create initial CC pipe instance failed: {error}"))?;
 
     {
         let runtime = runtime.clone();
-        let app_handle = app_handle.clone();
         let bridge = bridge.clone();
         thread::Builder::new()
             .name("ToolHubCcPipeServer".to_string())
-            .spawn(move || server_loop(runtime, app_handle, bridge))
+            .spawn(move || server_loop(runtime, bridge, Some(first_pipe)))
             .map_err(|error| format!("start CC pipe server failed: {error}"))?;
     }
 
@@ -154,14 +154,19 @@ pub fn start(runtime: AppRuntime, app_handle: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-fn server_loop(runtime: AppRuntime, app_handle: AppHandle, bridge: PipeBridge) {
+fn server_loop(runtime: AppRuntime, bridge: PipeBridge, mut next_pipe: Option<File>) {
     log::info!(
         target: "toolhub::cc",
         "CC Pipe Adapter listening at {PIPE_NAME}"
     );
 
     loop {
-        match create_pipe_instance() {
+        let pipe = match next_pipe.take() {
+            Some(pipe) => Ok(pipe),
+            None => create_pipe_instance(),
+        };
+
+        match pipe {
             Ok(mut reader) => {
                 if let Err(error) = connect_pipe(&reader) {
                     log::warn!(target: "toolhub::cc", "CC pipe connect failed: {error}");
@@ -190,7 +195,6 @@ fn server_loop(runtime: AppRuntime, app_handle: AppHandle, bridge: PipeBridge) {
                             &mut reader,
                             Arc::clone(&connection),
                             runtime.clone(),
-                            app_handle.clone(),
                         ) {
                             log::warn!(target: "toolhub::cc", "CC pipe session ended: {error}");
                         }
@@ -279,7 +283,6 @@ fn serve_session(
     reader: &mut File,
     connection: Arc<Connection>,
     runtime: AppRuntime,
-    app_handle: AppHandle,
 ) -> Result<(), String> {
     loop {
         let message = read_value(reader)?;
@@ -327,7 +330,7 @@ fn serve_session(
                     );
                     thread::spawn(move || {
                         thread::sleep(Duration::from_millis(100));
-                        app_handle.exit(0);
+                        std::process::exit(0);
                     });
                     return Ok(());
                 }
