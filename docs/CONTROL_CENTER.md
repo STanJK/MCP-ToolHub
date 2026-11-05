@@ -1,221 +1,327 @@
 # Control Center integration
 
-MCP-ToolHub implements the downstream boundary defined by **STanJK PC Control Center — CC Module Spec v1**.
+MCP-ToolHub targets the current **STanJK PC Control Center CC Module Spec v1** and **CC Pipe Protocol v1**.
 
-The integration is intentionally narrow:
+The authoritative topology is:
 
 ```text
-STanJK PC Control Center
+CC HTTP/static host
+http://127.0.0.1:32145
         |
-        | probe / start / stop
+        | static ToolHub frontend
+        | /modules/toolhub/ui/
+        |
+        | opaque HTTP proxy
+        | /api/modules/toolhub/*
         v
-bin/cc-interface.exe
+\\.\pipe\STanJK-CC-toolhub
         |
         v
-ToolHub-owned CC runtime
-        |
-        +-- scripts/init-tunnel.ps1
-        +-- scripts/run-tunnel.ps1
-        +-- official tunnel-client.exe
-        +-- MCP-ToolHub Core
+original mcp-toolhub-gui-host.exe backend
+        + thin CC Pipe Adapter
+        + existing TunnelManager
+        + existing module probe/config/log runtime
 ```
 
-Control Center does not know ToolHub module state, tunnel metrics, verbose logs, configuration, MCP catalogs, or backend-specific diagnostics.
+There is no second CC-specific ToolHub business backend and no dedicated ToolHub TCP API port.
 
-## Package contract
+## Current Control Center implementation status
+
+The current Control Center specification is the downstream adaptation target.
+
+At the time of this integration, the CC repository documentation explicitly states that the persistent pipe router is the next CC-side implementation step and the checked-in supervisor runtime still contains the earlier short-lived lifecycle adapter.
+
+Therefore ToolHub is adapted to the new canonical protocol ahead of the CC runtime switchover.
+
+## Manifest
 
 The repository root contains:
 
-```text
-cc-module.json
+```json
+{
+  "spec": "cc-module-v1",
+  "id": "toolhub",
+  "name": "MCP ToolHub",
+  "version": "0.1.0",
+  "description": "Local MCP runtime and Secure MCP Tunnel broker",
+  "backend": {
+    "version": 1,
+    "entry": "bin/mcp-toolhub-gui-host.exe",
+    "args": ["--cc-backend", "--bootstrap"]
+  },
+  "ui": {
+    "entry": "app/gui/dist/index.html"
+  }
+}
 ```
 
-with module id:
+CC Managed launch therefore starts the original ToolHub backend executable directly.
+
+No lifecycle wrapper process is used.
+
+## Original backend modes
+
+The same executable supports both existing standalone operation and CC Managed operation.
+
+### Existing standalone GUI
 
 ```text
-toolhub
+mcp-toolhub-gui-host.exe
 ```
 
-The manifest declares only the lifecycle interface:
+The window is visible and the CC pipe server is also available so a later-started CC instance can bind dynamically.
+
+### Existing standalone bootstrap
 
 ```text
-bin/cc-interface.exe
+mcp-toolhub-gui-host.exe -bootstrap
 ```
 
-No CC-hosted module UI is declared in v1. The existing Tauri ToolHub GUI remains a standalone module-owned interface because its current frontend depends on the Tauri backend and is not a static CC-hosted page.
+The window is visible and the existing tunnel bootstrap behavior is preserved.
 
-## Lifecycle semantics
+### CC Managed backend
 
-### probe
+```text
+mcp-toolhub-gui-host.exe --cc-backend --bootstrap
+```
 
-`probe` is side-effect-light.
+This is the same backend binary.
 
-It returns exactly one JSON object:
+`--cc-backend` hides the Tauri window because CC hosts the module frontend in its own shell.
+
+`--bootstrap` preserves the existing ToolHub tunnel startup path.
+
+## Persistent pipe
+
+The backend always hosts:
+
+```text
+\\.\pipe\STanJK-CC-toolhub
+```
+
+The module is the Named Pipe server and CC is the client.
+
+Framing is:
+
+```text
+[u32 little-endian JSON length][UTF-8 JSON]
+```
+
+The implementation enforces a bounded control-plane frame size.
+
+Immediately after CC connects, ToolHub sends:
 
 ```json
-{"running": true}
+{
+  "type": "hello",
+  "protocol": "cc-pipe-v1",
+  "module_id": "toolhub"
+}
 ```
 
-or:
+and requires the standard `hello-ack` before the session is considered bound.
+
+## Lifecycle
+
+Running state is the persistent CC pipe binding state. ToolHub does not expose a separate probe executable.
+
+### Start
+
+If ToolHub is Managed and unbound, CC launches:
+
+```text
+bin/mcp-toolhub-gui-host.exe --cc-backend --bootstrap
+```
+
+The normal backend starts, creates the standard pipe and waits for CC binding.
+
+### Stop
+
+CC sends:
 
 ```json
-{"running": false}
+{
+  "type": "lifecycle.stop",
+  "request_id": 1001
+}
 ```
 
-Running means either:
+ToolHub stops its tunnel runtime through the existing `TunnelManager`, replies with `lifecycle.result`, then exits the original backend.
 
-1. the CC-managed ToolHub runtime process is alive; or
-2. the compatible legacy ToolHub tunnel runtime is already active through the repository-local `.toolhub/bin/tunnel-client.exe`.
+## Frontend
 
-Probe does not report tunnel readiness, backend health, module health, logs, or metrics.
+The existing React frontend is reused unchanged at the page/component level.
 
-### start
+Only its transport layer is dual-mode.
 
-`start` returns promptly after dispatching the ToolHub-owned CC runtime.
+### Standalone Tauri mode
 
-The CC runtime:
+```text
+React
+ -> @tauri-apps/api invoke(...)
+ -> existing Rust commands
+```
 
-1. refreshes the existing tunnel-client profile through `scripts/init-tunnel.ps1`;
-2. starts the existing `scripts/run-tunnel.ps1` path;
-3. owns the resulting process tree;
-4. monitors only the top-level tunnel readiness needed for Error Mailbox reporting.
+### CC static-host mode
 
-If a compatible ToolHub tunnel is already running, start is idempotent and does not launch a duplicate runtime.
+```text
+React
+ -> /api/modules/toolhub/*
+ -> CC opaque HTTP/pipe proxy
+ -> ToolHub CC Pipe Adapter
+ -> existing Rust backend operations
+```
 
-### stop
+The frontend automatically detects whether it is running inside Tauri.
 
-`stop` terminates the CC-managed ToolHub runtime process tree.
+The Vite build uses:
 
-For compatibility, if ToolHub was started through the legacy launcher rather than CC, the adapter may stop the repository-local `tunnel-client.exe` that owns the default ToolHub health listener.
+```text
+base: "./"
+```
+
+so static assets remain valid when served below:
+
+```text
+/modules/toolhub/ui/
+```
+
+## ToolHub-owned proxied routes
+
+CC does not interpret these routes.
+
+ToolHub currently owns:
+
+```text
+GET  /dashboard
+POST /tunnel/restart
+
+GET  /logs?afterSequence=<n>
+POST /logs/clear
+
+GET  /modules
+GET  /modules/{module-id}/config
+PUT  /modules/{module-id}/config
+POST /modules/{module-id}/probe
+```
+
+These correspond to the existing standalone GUI capabilities.
+
+No ToolHub route semantics are added to CC itself.
+
+## Concurrent HTTP proxy requests
+
+Each `http.request` carries a required `request_id`.
+
+ToolHub dispatches proxied requests independently and returns:
+
+```json
+{
+  "type": "http.response",
+  "request_id": 2001,
+  "status": 200,
+  "content_type": "application/json",
+  "body_b64": "..."
+}
+```
+
+Responses are correlated by request ID and do not require in-order completion.
 
 ## Error Mailbox
 
-When CC invokes `start`, it supplies `CC_ERROR_MAILBOX_URL`.
+Only top-level Error transitions are proactively pushed.
 
-The ToolHub-owned CC runtime may report only top-level problems such as:
-
-- `toolhub-config-missing`
-- `tunnel-profile-init-failed`
-- `tunnel-runtime-start-failed`
-- `tunnel-not-ready`
-- `tunnel-runtime-exited`
-- `toolhub-cc-runtime-failed`
-
-The runtime clears the Error latch after the tunnel readiness endpoint becomes healthy.
-
-ToolHub does not send normal logs, module status, MCP activity, progress, or metrics through the mailbox.
-
-Detailed module-owned logs remain at:
+Current ToolHub mappings are deliberately narrow:
 
 ```text
-%LOCALAPPDATA%\MCP-ToolHub\cc\cc-runtime.log
+tunnel-runtime-error
+tunnel-disconnected
 ```
 
-## Build the CC adapter
+Healthy/recovered state sends:
 
-From the ToolHub repository root:
+```json
+{"type":"error.clear"}
+```
+
+ToolHub does not push normal logs, module status, tool catalogs, metrics, progress or other business events over the pipe.
+
+Those remain pull-based through the module frontend API.
+
+## Build
+
+From the repository root:
 
 ```powershell
 npm run cc:build
 ```
 
-This runs:
+This performs the normal Tauri release build, which also builds the React frontend.
+
+It then stages the same release backend binary at:
 
 ```text
-cargo build --manifest-path cc-interface/Cargo.toml --release --locked
+bin/mcp-toolhub-gui-host.exe
 ```
 
-and stages:
+and requires the static frontend entry to exist at:
 
 ```text
-bin/cc-interface.exe
+app/gui/dist/index.html
 ```
 
-The staged executable is intentionally not committed.
+Both paths match `cc-module.json`.
 
-## Pre-onboarding requirements
+## Onboarding
 
-Before onboarding ToolHub into CC:
-
-1. `node.exe` must be available in PATH.
-2. `toolhub.local.yaml` must exist.
-3. the official tunnel client must be installed:
-
-```powershell
-.\scripts\bootstrap-tunnel.ps1
-```
-
-4. build the lifecycle adapter:
-
-```powershell
-npm run cc:build
-```
-
-## Direct lifecycle smoke test
-
-A local smoke test can be run without Control Center:
-
-```powershell
-cd C:\STanJK\Development\MCP-ToolHub
-$env:CC_MODULE_ROOT = (Get-Location).Path
-
-.\bin\cc-interface.exe probe
-.\bin\cc-interface.exe start
-.\bin\cc-interface.exe probe
-.\bin\cc-interface.exe stop
-.\bin\cc-interface.exe probe
-```
-
-Without `CC_ERROR_MAILBOX_URL`, mailbox reporting is simply disabled for this manual smoke test.
-
-## Onboard into Control Center
-
-Build Control Center from its `round1/headless-supervisor` implementation, then run its administration command:
+After the new CC pipe-router implementation lands:
 
 ```powershell
 stanjk-pc-control-center.exe module onboard C:\STanJK\Development\MCP-ToolHub
 ```
 
-After onboarding, use **Reload All** in the CC Dashboard.
+Then use **Reload All**.
 
-Set ToolHub to **Managed** when CC should own its desired running state across CC startup and unexpected stops.
+When Managed is enabled, CC may launch the ToolHub backend if it is unbound.
 
-## Legacy compatibility
+When ToolHub was started independently first, CC should bind to the already-running standard pipe instead of launching a second backend.
 
-The CC integration does not replace existing ToolHub entry points.
+## Compatibility
 
-These remain supported:
+These existing modes remain supported:
 
 ```powershell
 .\scripts\run-tunnel.ps1
+npm run start:local
+npm run gui:build
 ```
 
-Standalone GUI:
+and:
 
 ```text
 mcp-toolhub-gui-host.exe
 mcp-toolhub-gui-host.exe -bootstrap
 ```
 
-Local DSH stdio mode:
+The CC integration does not replace Secure MCP Tunnel mode or DSH local stdio mode.
 
-```powershell
-npm run start:local
-```
+## Boundary rules
 
-Lifecycle ownership should not be mixed deliberately. When CC owns the runtime, Start/Stop should be performed through Control Center. The standalone launchers remain compatibility paths for machines or sessions where CC is not the lifecycle owner.
+ToolHub keeps ownership of:
 
-## Deliberate v1 exclusions
+- tunnel state and restart semantics;
+- ToolHub module state;
+- module configuration;
+- module probes/tool catalogs;
+- ToolHub logs;
+- business/frontend semantics.
 
-This integration does not add any of the following to the CC boundary:
+CC owns only:
 
-- ToolHub module telemetry
-- ToolHub logs
-- MCP tool catalogs
-- tunnel metrics
-- module configuration editing
-- ToolHub business APIs
-- module-to-module RPC
-- a CC event bus
-
-Those remain ToolHub-owned concerns.
+- registration;
+- optional Managed launch of the original backend;
+- persistent pipe binding;
+- static frontend hosting;
+- opaque HTTP/pipe transport;
+- lifecycle stop dispatch;
+- one top-level Error latch.
