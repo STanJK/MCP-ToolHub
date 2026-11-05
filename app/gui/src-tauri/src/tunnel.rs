@@ -103,22 +103,6 @@ impl TunnelManager {
             .join("tunnel-client.exe")
     }
 
-    fn cc_runtime_pid() -> Option<u32> {
-        let local_app_data = std::env::var_os("LOCALAPPDATA").map(PathBuf::from)?;
-        let pid_path = local_app_data
-            .join("MCP-ToolHub")
-            .join("cc")
-            .join("runtime.pid");
-        let raw = std::fs::read_to_string(pid_path).ok()?;
-        let pid = raw.trim().parse::<u32>().ok()?;
-        let image = Self::process_path(pid)?;
-        let is_node = image
-            .file_name()
-            .and_then(|name| name.to_str())
-            .is_some_and(|name| name.eq_ignore_ascii_case("node.exe"));
-        is_node.then_some(pid)
-    }
-
     fn normalize_path(path: &Path) -> String {
         path.canonicalize()
             .unwrap_or_else(|_| path.to_path_buf())
@@ -478,14 +462,6 @@ impl TunnelManager {
     }
 
     pub fn restart(&self) -> Result<TunnelSnapshot, String> {
-        if let Some(pid) = Self::cc_runtime_pid() {
-            let message = format!(
-                "Control Center owns ToolHub lifecycle through CC runtime PID {pid}; use Control Center Start/Stop while Managed"
-            );
-            log::warn!(target: "toolhub::tunnel", "{message}");
-            return Err(message);
-        }
-
         {
             let mut inner = self.inner.lock().unwrap_or_else(|error| error.into_inner());
             Self::refresh_locked(&mut inner);
@@ -567,6 +543,28 @@ impl TunnelManager {
         }
         if let Some(stderr) = stderr {
             Self::spawn_reader(stderr, "ERROR", Arc::clone(&self.inner));
+        }
+
+        Ok(self.snapshot())
+    }
+
+    pub fn stop(&self) -> Result<TunnelSnapshot, String> {
+        {
+            let mut inner = self.inner.lock().unwrap_or_else(|error| error.into_inner());
+            Self::refresh_locked(&mut inner);
+            Self::stop_managed_locked(&mut inner);
+            inner.last_error = None;
+            inner.last_exit_code = None;
+        }
+
+        self.stop_external_if_toolhub()?;
+
+        {
+            let mut inner = self.inner.lock().unwrap_or_else(|error| error.into_inner());
+            inner.phase = "stopped".to_string();
+            inner.connection = "unknown".to_string();
+            inner.pid = None;
+            inner.started_at_ms = None;
         }
 
         Ok(self.snapshot())
