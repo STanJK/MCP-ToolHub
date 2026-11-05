@@ -236,29 +236,44 @@ npx @modelcontextprotocol/inspector node .\src\index.mjs
 
 ## STanJK PC Control Center
 
-ToolHub implements **CC Module Spec v1** without replacing its existing launch paths.
+ToolHub targets the current **CC Module Spec v1 / CC Pipe Protocol v1**.
 
-The Control Center boundary is intentionally limited to:
+The integration keeps the original ToolHub backend authoritative:
 
 ```text
-cc-module.json
-    -> bin/cc-interface.exe
-       -> probe / start / stop
+CC static host + opaque HTTP proxy
+        |
+        v
+\\.\pipe\STanJK-CC-toolhub
+        |
+        v
+mcp-toolhub-gui-host.exe
 ```
 
-CC-managed startup reuses the existing tunnel scripts internally. ToolHub diagnostics, module state, logs, configuration, MCP catalogs, and business UI remain ToolHub-owned.
+The same React frontend now supports two transports:
 
-Build and stage the lifecycle adapter:
+- standalone Tauri: existing `invoke(...)`;
+- CC static hosting: same-origin `/api/modules/toolhub/*` through the persistent pipe.
+
+The same backend executable supports:
+
+```text
+mcp-toolhub-gui-host.exe
+mcp-toolhub-gui-host.exe -bootstrap
+mcp-toolhub-gui-host.exe --cc-backend --bootstrap
+```
+
+Build the CC-ready package:
 
 ```powershell
 npm run cc:build
 ```
 
-Then onboard the ToolHub repository root with Control Center and use **Reload All**.
+This stages the original release backend at `bin/mcp-toolhub-gui-host.exe` and builds the static frontend at `app/gui/dist/index.html`.
 
-The existing `run-tunnel.ps1`, standalone GUI/`-bootstrap`, and DSH `--local` entry points remain supported when CC is not the lifecycle owner.
+The existing `run-tunnel.ps1`, standalone GUI, and DSH `--local` modes remain supported.
 
-See [docs/CONTROL_CENTER.md](docs/CONTROL_CENTER.md) for the package, lifecycle, Error Mailbox, onboarding, and compatibility contract.
+See [docs/CONTROL_CENTER.md](docs/CONTROL_CENTER.md).
 
 ## Local mode / DeepSeek Harness
 
