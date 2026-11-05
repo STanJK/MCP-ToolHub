@@ -29,11 +29,15 @@ pub fn probe(repo_root: &Path, config_path: &Path, module_id: &str) -> Result<Mo
     }
 
     log::info!(target: "toolhub::modules", "Probing module {module_id}");
-    let output = Command::new("node")
+    let mut command = Command::new("node");
+    command
         .arg(&script)
         .arg(module_id)
         .current_dir(repo_root)
-        .env("TOOLHUB_CONFIG", config_path)
+        .env("TOOLHUB_CONFIG", config_path);
+    crate::background_process::configure_no_window(&mut command);
+
+    let output = command
         .output()
         .map_err(|error| format!("Failed to start Node module probe: {error}"))?;
 
