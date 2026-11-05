@@ -87,7 +87,7 @@ mcp-toolhub-gui-host.exe --cc-backend --bootstrap
 
 This is the same backend binary.
 
-`--cc-backend` hides the Tauri window because CC hosts the module frontend in its own shell.
+`--cc-backend` takes a true headless branch before any Tauri runtime/WebView/window is created. CC hosts the module frontend in its own shell.
 
 `--bootstrap` preserves the existing ToolHub tunnel startup path.
 
@@ -276,11 +276,13 @@ Both paths match `cc-module.json`.
 
 Before the CC-side persistent router lands, the ToolHub backend can be validated directly with the repository smoke-test client.
 
-Start the backend:
+Start the true headless backend:
 
 ```powershell
 .\bin\mcp-toolhub-gui-host.exe --cc-backend --bootstrap
 ```
+
+This path does not instantiate Tauri or create a window.
 
 Then, from a second PowerShell:
 
