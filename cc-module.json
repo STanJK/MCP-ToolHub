@@ -1,0 +1,11 @@
+{
+  "spec": "cc-module-v1",
+  "id": "toolhub",
+  "name": "MCP ToolHub",
+  "version": "0.1.0",
+  "description": "Local MCP runtime and Secure MCP Tunnel broker",
+  "interface": {
+    "version": 1,
+    "entry": "bin/cc-interface.exe"
+  }
+}
