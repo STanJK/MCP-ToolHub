@@ -142,15 +142,6 @@ pub fn start(runtime: AppRuntime) -> Result<(), String> {
             .map_err(|error| format!("start CC pipe server failed: {error}"))?;
     }
 
-    {
-        let runtime = runtime.clone();
-        let bridge = bridge.clone();
-        thread::Builder::new()
-            .name("ToolHubCcErrorMailbox".to_string())
-            .spawn(move || error_monitor_loop(runtime, bridge))
-            .map_err(|error| format!("start CC error monitor failed: {error}"))?;
-    }
-
     Ok(())
 }
 
@@ -191,6 +182,12 @@ fn server_loop(runtime: AppRuntime, bridge: PipeBridge, mut next_pipe: Option<Fi
                     Ok(()) => {
                         log::info!(target: "toolhub::cc", "CC pipe session bound");
                         bridge.set_connection(Arc::clone(&connection));
+                        if let Err(error) = send_error_mailbox_snapshot(&runtime, &connection) {
+                            log::warn!(
+                                target: "toolhub::cc",
+                                "initial Error Mailbox snapshot failed: {error}"
+                            );
+                        }
                         if let Err(error) = serve_session(
                             &mut reader,
                             Arc::clone(&connection),
@@ -309,30 +306,22 @@ fn serve_session(
                     "CC http.request received: request_id={request_id} method={method} path={path}"
                 );
 
-                let connection = Arc::clone(&connection);
-                let runtime = runtime.clone();
-                thread::spawn(move || {
-                    let response = handle_http_message(&runtime, &message);
-                    let status = response
-                        .get("status")
-                        .and_then(Value::as_u64)
-                        .unwrap_or(0);
-                    log::debug!(
-                        target: "toolhub::cc",
-                        "CC http.response ready: request_id={request_id} status={status}"
-                    );
-                    if let Err(error) = connection.send_value(&response) {
-                        log::warn!(
-                            target: "toolhub::cc",
-                            "send http.response failed: {error}"
-                        );
-                    } else {
-                        log::debug!(
-                            target: "toolhub::cc",
-                            "CC http.response sent: request_id={request_id}"
-                        );
-                    }
-                });
+                let response = handle_http_message(&runtime, &message);
+                let status = response
+                    .get("status")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(0);
+                log::debug!(
+                    target: "toolhub::cc",
+                    "CC http.response ready: request_id={request_id} status={status}"
+                );
+
+                connection.send_value(&response)?;
+                log::debug!(
+                    target: "toolhub::cc",
+                    "CC http.response sent: request_id={request_id}"
+                );
+                send_error_mailbox_snapshot(&runtime, &connection)?;
             }
             Some("lifecycle.stop") => {
                 let request_id = message
@@ -536,61 +525,22 @@ fn query_value<'a>(query: &'a str, key: &str) -> Option<&'a str> {
     })
 }
 
-fn error_monitor_loop(runtime: AppRuntime, bridge: PipeBridge) {
-    let mut observed_generation = u64::MAX;
-    let mut sent_initialized = false;
-    let mut last_sent: Option<String> = None;
-
-    loop {
-        thread::sleep(Duration::from_secs(2));
-
-        let (generation, connection) = bridge.snapshot();
-        let Some(connection) = connection else {
-            observed_generation = generation;
-            sent_initialized = false;
-            last_sent = None;
-            continue;
-        };
-
-        if generation != observed_generation {
-            observed_generation = generation;
-            sent_initialized = false;
-            last_sent = None;
-        }
-
-        let desired = top_level_error(&runtime);
-        let desired_code = desired.as_ref().map(|(code, _, _)| code.clone());
-
-        if sent_initialized && desired_code == last_sent {
-            continue;
-        }
-
-        let send_result = match desired {
-            Some((code, summary, detail)) => connection.send_value(&json!({
-                "type": "error.set",
-                "error": {
-                    "code": code,
-                    "summary": summary,
-                    "detail": detail
-                }
-            })),
-            None => connection.send_value(&json!({
-                "type": "error.clear"
-            })),
-        };
-
-        match send_result {
-            Ok(()) => {
-                sent_initialized = true;
-                last_sent = desired_code;
+fn send_error_mailbox_snapshot(
+    runtime: &AppRuntime,
+    connection: &Connection,
+) -> Result<(), String> {
+    match top_level_error(runtime) {
+        Some((code, summary, detail)) => connection.send_value(&json!({
+            "type": "error.set",
+            "error": {
+                "code": code,
+                "summary": summary,
+                "detail": detail
             }
-            Err(error) => {
-                log::warn!(
-                    target: "toolhub::cc",
-                    "send Error Mailbox transition failed: {error}"
-                );
-            }
-        }
+        })),
+        None => connection.send_value(&json!({
+            "type": "error.clear"
+        })),
     }
 }
 
