@@ -267,19 +267,46 @@ export function App() {
 
   useEffect(() => {
     let cancelled = false;
+    let timer: number | null = null;
+
+    const schedule = () => {
+      if (!cancelled) {
+        timer = window.setTimeout(() => void poll(), 350);
+      }
+    };
+
     const poll = async () => {
       try {
         const next = await api.logs(lastSequence.current);
-        if (cancelled || next.length === 0) return;
-        lastSequence.current = next.at(-1)?.sequence ?? lastSequence.current;
-        setLogs((previous) => [...previous, ...next].slice(-2000));
-      } catch {}
+        if (cancelled) return;
+
+        if (next.length > 0) {
+          lastSequence.current = Math.max(
+            lastSequence.current,
+            ...next.map((entry) => entry.sequence),
+          );
+
+          setLogs((previous) => {
+            const merged = new Map<number, LogEntry>();
+            for (const entry of previous) merged.set(entry.sequence, entry);
+            for (const entry of next) merged.set(entry.sequence, entry);
+            return [...merged.values()]
+              .sort((a, b) => a.sequence - b.sequence)
+              .slice(-2000);
+          });
+        }
+      } catch {
+        // Keep polling; transient backend/CC transport errors are surfaced elsewhere.
+      } finally {
+        schedule();
+      }
     };
+
     void poll();
-    const timer = window.setInterval(() => void poll(), 350);
+
     return () => {
       cancelled = true;
-      window.clearInterval(timer);
+      if (timer !== null) window.clearTimeout(timer);
     };
   }, []);
 
@@ -326,6 +353,31 @@ export function App() {
       await refreshProbe(selectedId);
     } catch (e) {
       setError(String(e));
+    }
+  };
+
+  const copyLast100Logs = async () => {
+    const text = visibleLogs
+      .slice(-100)
+      .map(
+        (entry) =>
+          `${formatTime(entry.timestampMs)} ${entry.level.padEnd(5)} ${entry.target} ${entry.message}`,
+      )
+      .join("\n");
+
+    if (!text) return;
+
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const textarea = document.createElement("textarea");
+      textarea.value = text;
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand("copy");
+      textarea.remove();
     }
   };
 
@@ -412,6 +464,13 @@ export function App() {
                   active={showDebugLogs}
                   onClick={() => setShowDebugLogs((value) => !value)}
                 />
+                <SmallButton
+                  onClick={() => void copyLast100Logs()}
+                  disabled={visibleLogs.length === 0}
+                  title="Copy the last 100 currently visible log entries"
+                >
+                  Copy Last 100
+                </SmallButton>
                 <SmallButton onClick={() => void clearLogs()}>Clear</SmallButton>
               </>
             }
