@@ -46,11 +46,11 @@ function toneFor(status?: string | null): Tone {
 function StatusPill({ status }: { status?: string | null }) {
   const tone = toneFor(status);
   const classes: Record<Tone, string> = {
-    neutral: "border-slate-700 bg-slate-800/70 text-slate-300",
-    info: "border-sky-500/40 bg-sky-500/10 text-sky-300",
-    success: "border-emerald-500/40 bg-emerald-500/10 text-emerald-300",
-    warning: "border-amber-500/40 bg-amber-500/10 text-amber-300",
-    danger: "border-rose-500/40 bg-rose-500/10 text-rose-300",
+    neutral: "border-[var(--cc-border-strong)] bg-[var(--cc-surface-2)] text-[var(--cc-muted-strong)]",
+    info: "border-[rgba(124,169,239,.28)] bg-[rgba(124,169,239,.09)] text-[#9dbcf0]",
+    success: "border-[rgba(116,216,160,.26)] bg-[rgba(116,216,160,.09)] text-[#9be9bb]",
+    warning: "border-[rgba(227,190,107,.28)] bg-[rgba(227,190,107,.09)] text-[#eccb83]",
+    danger: "border-[rgba(239,125,134,.28)] bg-[rgba(239,125,134,.09)] text-[#f39aa1]",
   };
   return (
     <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium ${classes[tone]}`}>
@@ -72,9 +72,9 @@ function Pane({
   children: React.ReactNode;
 }) {
   return (
-    <section className="flex min-h-0 flex-col border border-slate-800 bg-[#0d1117]">
-      <header className="flex h-11 shrink-0 items-center justify-between border-b border-slate-800 px-3">
-        <div className="flex min-w-0 items-center gap-2 text-sm font-semibold text-slate-200">
+    <section className="flex min-h-0 flex-col border border-[var(--cc-border)] bg-[var(--cc-surface-1)]">
+      <header className="flex h-11 shrink-0 items-center justify-between border-b border-[var(--cc-border)] px-3">
+        <div className="flex min-w-0 items-center gap-2 text-sm font-semibold text-[var(--cc-foreground)]">
           {icon}
           <span className="truncate">{title}</span>
         </div>
@@ -102,7 +102,7 @@ function SmallButton({
       title={title}
       disabled={disabled}
       onClick={onClick}
-      className="inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-700 bg-slate-900 px-2.5 text-xs font-medium text-slate-200 transition hover:border-slate-600 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+      className="inline-flex h-8 items-center gap-1.5 rounded-md border border-[var(--cc-border-strong)] bg-[var(--cc-surface-2)] px-2.5 text-xs font-medium text-[var(--cc-foreground)] transition hover:border-[#4c5966] hover:bg-[var(--cc-surface-3)] disabled:cursor-not-allowed disabled:opacity-50"
     >
       {children}
     </button>
@@ -121,9 +121,9 @@ function LogFilterButton({
   onClick: () => void;
 }) {
   const activeClasses = {
-    error: "border-rose-500/50 bg-rose-500/15 text-rose-300",
-    normal: "border-emerald-500/50 bg-emerald-500/15 text-emerald-300",
-    debug: "border-sky-500/50 bg-sky-500/15 text-sky-300",
+    error: "border-[rgba(239,125,134,.28)] bg-[rgba(239,125,134,.09)] text-[#f39aa1]",
+    normal: "border-[rgba(116,216,160,.26)] bg-[rgba(116,216,160,.09)] text-[#9be9bb]",
+    debug: "border-[rgba(124,169,239,.28)] bg-[rgba(124,169,239,.09)] text-[#9dbcf0]",
   }[tone];
 
   return (
@@ -134,7 +134,7 @@ function LogFilterButton({
       className={`inline-flex h-8 items-center rounded-md border px-2.5 text-xs font-medium transition ${
         active
           ? activeClasses
-          : "border-slate-800 bg-slate-950 text-slate-600 hover:border-slate-700 hover:text-slate-400"
+          : "border-[var(--cc-border)] bg-[var(--cc-surface-0)] text-[var(--cc-muted)] hover:border-[var(--cc-border-strong)] hover:text-[var(--cc-muted-strong)]"
       }`}
     >
       {label}
@@ -154,15 +154,15 @@ function StatCard({
   icon: React.ReactNode;
 }) {
   return (
-    <div className="flex min-w-0 flex-1 items-center gap-3 rounded-lg border border-slate-800 bg-slate-950/55 p-3">
-      <div className="grid h-9 w-9 shrink-0 place-items-center rounded-md border border-slate-800 bg-slate-900 text-slate-400">
+    <div className="flex min-w-0 flex-1 items-center gap-3 rounded-lg border border-[var(--cc-border)] bg-[var(--cc-surface-1)] p-3">
+      <div className="grid h-9 w-9 shrink-0 place-items-center rounded-md border border-[var(--cc-border)] bg-[var(--cc-surface-2)] text-[var(--cc-muted)]">
         {icon}
       </div>
       <div className="min-w-0">
-        <div className="text-[11px] uppercase tracking-[0.14em] text-slate-500">{label}</div>
+        <div className="text-[11px] uppercase tracking-[0.14em] text-[var(--cc-muted)]">{label}</div>
         <div className="mt-1 flex items-center gap-2">
           <StatusPill status={value} />
-          {subtext && <span className="truncate text-xs text-slate-500">{subtext}</span>}
+          {subtext && <span className="truncate text-xs text-[var(--cc-muted)]">{subtext}</span>}
         </div>
       </div>
     </div>
@@ -395,7 +395,7 @@ export function App() {
   const restartLabel = tunnelPhase === "running" ? "Restart tunnel" : "Start tunnel";
 
   return (
-    <main className="h-screen w-screen overflow-hidden bg-[#090c11] text-slate-200">
+    <main className="h-screen w-screen overflow-hidden bg-[var(--cc-background)] text-[var(--cc-foreground)]">
       <div className="grid h-full grid-rows-[25%_75%] gap-2 p-2">
         <div className="grid min-h-0 grid-cols-2 gap-2">
           <Pane
@@ -429,12 +429,12 @@ export function App() {
                   icon={<Cable size={17} />}
                 />
               </div>
-              <div className="flex shrink-0 items-center justify-between border-t border-slate-800 pt-2 text-[11px] text-slate-500">
+              <div className="flex shrink-0 items-center justify-between border-t border-[var(--cc-border)] pt-2 text-[11px] text-[var(--cc-muted)]">
                 <span className="truncate">{dashboard?.configPath ?? "Loading configuration..."}</span>
                 <span>MCP-ToolHub GUI {dashboard?.version ?? "0.1.0"}</span>
               </div>
               {error && (
-                <div className="shrink-0 truncate rounded-md border border-rose-500/30 bg-rose-500/10 px-2 py-1 text-xs text-rose-300">
+                <div className="shrink-0 truncate rounded-md border border-[rgba(239,125,134,.28)] bg-[rgba(239,125,134,.09)] px-2 py-1 text-xs text-[#f39aa1]">
                   {error}
                 </div>
               )}
@@ -475,23 +475,23 @@ export function App() {
               </>
             }
           >
-            <div ref={logRef} className="h-full overflow-auto bg-[#080b10] p-2 font-mono text-[11px] leading-5">
+            <div ref={logRef} className="h-full overflow-auto bg-[var(--cc-surface-0)] p-2 font-mono text-[11px] leading-5">
               {visibleLogs.length === 0 && (
-                <div className="text-slate-600">
+                <div className="text-[var(--cc-muted)]">
                   {logs.length === 0 ? "No ToolHub GUI logs yet." : "No logs match the selected filters."}
                 </div>
               )}
               {visibleLogs.map((entry) => (
-                <div key={entry.sequence} className="grid grid-cols-[64px_48px_120px_1fr] gap-2 border-b border-slate-900/70 py-0.5">
-                  <span className="text-slate-600">{formatTime(entry.timestampMs)}</span>
+                <div key={entry.sequence} className="grid grid-cols-[64px_48px_120px_1fr] gap-2 border-b border-[rgba(57,68,80,.38)] py-0.5">
+                  <span className="text-[var(--cc-muted)]">{formatTime(entry.timestampMs)}</span>
                   <span className={
-                    entry.level === "ERROR" ? "text-rose-400" :
-                    entry.level === "WARN" ? "text-amber-400" :
-                    entry.level === "DEBUG" ? "text-sky-400" :
-                    "text-emerald-400"
+                    entry.level === "ERROR" ? "text-[#f09aa1]" :
+                    entry.level === "WARN" ? "text-[#eccb83]" :
+                    entry.level === "DEBUG" ? "text-[#9dbcf0]" :
+                    "text-[#8793a0]"
                   }>{entry.level}</span>
-                  <span className="truncate text-slate-500">{entry.target.split("::").at(-1)}</span>
-                  <span className="whitespace-pre-wrap break-all text-slate-300">{entry.message}</span>
+                  <span className="truncate text-[var(--cc-muted)]">{entry.target.split("::").at(-1)}</span>
+                  <span className="whitespace-pre-wrap break-all text-[var(--cc-log-text)]">{entry.message}</span>
                 </div>
               ))}
             </div>
@@ -518,19 +518,19 @@ export function App() {
                     onClick={() => setSelectedId(module.id)}
                     className={`w-full rounded-md border px-3 py-2.5 text-left transition ${
                       module.id === selectedId
-                        ? "border-sky-500/50 bg-sky-500/10"
-                        : "border-slate-800 bg-slate-950/40 hover:bg-slate-900"
+                        ? "border-[var(--cc-border-strong)] bg-[var(--cc-surface-2)]"
+                        : "border-[var(--cc-border)] bg-[var(--cc-surface-0)] hover:bg-[var(--cc-surface-2)]"
                     }`}
                   >
                     <div className="flex items-center justify-between gap-2">
-                      <span className="font-mono text-sm text-slate-200">{module.id}</span>
+                      <span className="font-mono text-sm text-[var(--cc-foreground)]">{module.id}</span>
                       <StatusPill status={module.enabled ? "ready" : "disabled"} />
                     </div>
-                    <div className="mt-1.5 truncate text-xs text-slate-500">
+                    <div className="mt-1.5 truncate text-xs text-[var(--cc-muted)]">
                       {module.configPath ?? "No config path"}
                     </div>
                     {!module.configExists && module.enabled && (
-                      <div className="mt-1 text-xs text-rose-400">Config file missing</div>
+                      <div className="mt-1 text-xs text-[#f09aa1]">Config file missing</div>
                     )}
                   </button>
                 ))}
@@ -555,7 +555,7 @@ export function App() {
             }
           >
             <div className="flex h-full min-h-0 flex-col">
-              <div className="shrink-0 border-b border-slate-800 px-3 py-2 font-mono text-[11px] text-slate-500">
+              <div className="shrink-0 border-b border-[var(--cc-border)] px-3 py-2 font-mono text-[11px] text-[var(--cc-muted)]">
                 {configView?.path ?? "Select a module"}
               </div>
               <textarea
@@ -566,10 +566,10 @@ export function App() {
                   setConfigDraft(event.target.value);
                   setConfigDirty(event.target.value !== configView?.content);
                 }}
-                className="min-h-0 flex-1 resize-none border-0 bg-[#080b10] p-3 font-mono text-xs leading-5 text-slate-300 outline-none disabled:text-slate-700"
+                className="min-h-0 flex-1 resize-none border-0 bg-[var(--cc-surface-0)] p-3 font-mono text-xs leading-5 text-[var(--cc-log-text)] outline-none disabled:text-[var(--cc-muted)]"
                 placeholder="Select a module to inspect its local YAML."
               />
-              <div className="flex h-8 shrink-0 items-center justify-between border-t border-slate-800 px-3 text-[11px] text-slate-500">
+              <div className="flex h-8 shrink-0 items-center justify-between border-t border-[var(--cc-border)] px-3 text-[11px] text-[var(--cc-muted)]">
                 <span>{configDirty ? "Modified" : "Saved"}</span>
                 <span>{configDraft.length} chars</span>
               </div>
@@ -590,38 +590,38 @@ export function App() {
             }
           >
             <div className="flex h-full min-h-0 flex-col">
-              <div className="shrink-0 border-b border-slate-800 p-3">
+              <div className="shrink-0 border-b border-[var(--cc-border)] p-3">
                 <div className="flex items-center justify-between gap-3">
                   <div>
-                    <div className="text-xs uppercase tracking-[0.14em] text-slate-500">Backend status</div>
+                    <div className="text-xs uppercase tracking-[0.14em] text-[var(--cc-muted)]">Backend status</div>
                     <div className="mt-2"><StatusPill status={probeBusy ? "checking" : probe?.status ?? "unknown"} /></div>
                   </div>
-                  <div className="text-right text-xs text-slate-500">
+                  <div className="text-right text-xs text-[var(--cc-muted)]">
                     <div>{probe?.tools.length ?? 0} visible tools</div>
                     <div className="mt-1">{selected?.enabled ? "enabled" : "disabled"}</div>
                   </div>
                 </div>
-                <div className="mt-3 whitespace-pre-wrap text-xs leading-5 text-slate-400">
+                <div className="mt-3 whitespace-pre-wrap text-xs leading-5 text-[var(--cc-muted-strong)]">
                   {probeBusy ? "Probing module backend..." : probe?.message ?? "Select a module."}
                 </div>
               </div>
 
               <div className="min-h-0 flex-1 overflow-auto p-2">
-                <div className="mb-2 px-1 text-[11px] uppercase tracking-[0.14em] text-slate-600">Available tools</div>
+                <div className="mb-2 px-1 text-[11px] uppercase tracking-[0.14em] text-[var(--cc-muted)]">Available tools</div>
                 <div className="space-y-1">
                   {probe?.tools.map((tool) => (
-                    <div key={tool.name} className="rounded-md border border-slate-800 bg-slate-950/40 px-2.5 py-2">
-                      <div className="font-mono text-xs text-slate-200">{tool.name}</div>
+                    <div key={tool.name} className="rounded-md border border-[var(--cc-border)] bg-[var(--cc-surface-0)] px-2.5 py-2">
+                      <div className="font-mono text-xs text-[var(--cc-foreground)]">{tool.name}</div>
                       {(tool.title || tool.description) && (
-                        <div className="mt-1 line-clamp-2 text-[11px] leading-4 text-slate-500">
-                          {tool.title && <span className="text-slate-400">{tool.title}: </span>}
+                        <div className="mt-1 line-clamp-2 text-[11px] leading-4 text-[var(--cc-muted)]">
+                          {tool.title && <span className="text-[var(--cc-muted-strong)]">{tool.title}: </span>}
                           {tool.description}
                         </div>
                       )}
                     </div>
                   ))}
                   {!probeBusy && (probe?.tools.length ?? 0) === 0 && (
-                    <div className="rounded-md border border-dashed border-slate-800 px-3 py-8 text-center text-xs text-slate-600">
+                    <div className="rounded-md border border-dashed border-[var(--cc-border-strong)] px-3 py-8 text-center text-xs text-[var(--cc-muted)]">
                       No tools reported.
                     </div>
                   )}
@@ -629,9 +629,9 @@ export function App() {
               </div>
 
               {probe?.detail != null && (
-                <details className="shrink-0 border-t border-slate-800 bg-slate-950/40">
-                  <summary className="cursor-pointer px-3 py-2 text-xs text-slate-500">Raw module detail</summary>
-                  <pre className="max-h-40 overflow-auto border-t border-slate-800 p-3 font-mono text-[10px] text-slate-500">
+                <details className="shrink-0 border-t border-[var(--cc-border)] bg-[var(--cc-surface-0)]">
+                  <summary className="cursor-pointer px-3 py-2 text-xs text-[var(--cc-muted)]">Raw module detail</summary>
+                  <pre className="max-h-40 overflow-auto border-t border-[var(--cc-border)] p-3 font-mono text-[10px] text-[var(--cc-muted)]">
                     {JSON.stringify(probe.detail, null, 2)}
                   </pre>
                 </details>
