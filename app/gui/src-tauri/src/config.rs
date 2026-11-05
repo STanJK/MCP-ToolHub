@@ -42,6 +42,12 @@ pub struct ModuleConfigView {
 }
 
 pub fn repo_root() -> Result<PathBuf, String> {
+    if let Some(root) = std::env::var_os("CC_MODULE_ROOT").map(PathBuf::from) {
+        return root
+            .canonicalize()
+            .map_err(|error| format!("Failed to resolve CC_MODULE_ROOT {}: {error}", root.display()));
+    }
+
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     manifest
         .ancestors()
