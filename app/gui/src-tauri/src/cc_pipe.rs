@@ -501,6 +501,7 @@ fn query_value<'a>(query: &'a str, key: &str) -> Option<&'a str> {
 
 fn error_monitor_loop(runtime: AppRuntime, bridge: PipeBridge) {
     let mut observed_generation = u64::MAX;
+    let mut sent_initialized = false;
     let mut last_sent: Option<String> = None;
 
     loop {
@@ -509,19 +510,21 @@ fn error_monitor_loop(runtime: AppRuntime, bridge: PipeBridge) {
         let (generation, connection) = bridge.snapshot();
         let Some(connection) = connection else {
             observed_generation = generation;
+            sent_initialized = false;
             last_sent = None;
             continue;
         };
 
         if generation != observed_generation {
             observed_generation = generation;
+            sent_initialized = false;
             last_sent = None;
         }
 
         let desired = top_level_error(&runtime);
         let desired_code = desired.as_ref().map(|(code, _, _)| code.clone());
 
-        if desired_code == last_sent {
+        if sent_initialized && desired_code == last_sent {
             continue;
         }
 
@@ -541,7 +544,8 @@ fn error_monitor_loop(runtime: AppRuntime, bridge: PipeBridge) {
 
         match send_result {
             Ok(()) => {
-                last_sent = desired_code.or_else(|| Some("__clear__".to_string()));
+                sent_initialized = true;
+                last_sent = desired_code;
             }
             Err(error) => {
                 log::warn!(
