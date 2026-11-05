@@ -292,14 +292,44 @@ fn serve_session(
         let message = read_value(reader)?;
         match message.get("type").and_then(Value::as_str) {
             Some("http.request") => {
+                let request_id = message
+                    .get("request_id")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(0);
+                let method = message
+                    .get("method")
+                    .and_then(Value::as_str)
+                    .unwrap_or("<missing>");
+                let path = message
+                    .get("path")
+                    .and_then(Value::as_str)
+                    .unwrap_or("<missing>");
+                log::debug!(
+                    target: "toolhub::cc",
+                    "CC http.request received: request_id={request_id} method={method} path={path}"
+                );
+
                 let connection = Arc::clone(&connection);
                 let runtime = runtime.clone();
                 thread::spawn(move || {
                     let response = handle_http_message(&runtime, &message);
+                    let status = response
+                        .get("status")
+                        .and_then(Value::as_u64)
+                        .unwrap_or(0);
+                    log::debug!(
+                        target: "toolhub::cc",
+                        "CC http.response ready: request_id={request_id} status={status}"
+                    );
                     if let Err(error) = connection.send_value(&response) {
                         log::warn!(
                             target: "toolhub::cc",
                             "send http.response failed: {error}"
+                        );
+                    } else {
+                        log::debug!(
+                            target: "toolhub::cc",
+                            "CC http.response sent: request_id={request_id}"
                         );
                     }
                 });
