@@ -67,6 +67,55 @@ function Write-Frame {
   $Stream.Flush()
 }
 
+function Invoke-CcHttp {
+  param(
+    [System.IO.Stream]$Stream,
+    [uint64]$RequestId,
+    [string]$Method,
+    [string]$Path
+  )
+
+  Write-Host "[STEP] Sending $Method $Path..."
+  Write-Frame -Stream $Stream -Value @{
+    type = "http.request"
+    request_id = $RequestId
+    method = $Method
+    path = $Path
+    query = ""
+    content_type = $null
+    accept = "application/json"
+    body_b64 = $null
+  }
+
+  Write-Host "[STEP] Waiting for $Path response..."
+  while ($true) {
+    $message = Read-Frame -Stream $Stream
+
+    if ($message.type -eq "error.set" -or $message.type -eq "error.clear") {
+      Write-Host "[MAILBOX] $($message | ConvertTo-Json -Compress)"
+      continue
+    }
+
+    if ($message.type -eq "http.response" -and
+        [uint64]$message.request_id -eq $RequestId) {
+      $body = if ($null -ne $message.body_b64) {
+        [Text.Encoding]::UTF8.GetString(
+          [Convert]::FromBase64String([string]$message.body_b64)
+        )
+      } else {
+        ""
+      }
+
+      return [PSCustomObject]@{
+        Status = [int]$message.status
+        Body = $body
+      }
+    }
+
+    Write-Host "[INFO] Ignoring frame: $($message | ConvertTo-Json -Compress)"
+  }
+}
+
 $pipePath = "\\.\pipe\$pipeName"
 $visiblePipe = Get-ChildItem "\\.\pipe\" -ErrorAction SilentlyContinue |
   Where-Object { $_.Name -eq $pipeName } |
@@ -90,7 +139,6 @@ try {
     Write-Host "[STEP] Connecting..."
     $pipe.Connect($ConnectTimeoutMs)
     Write-Host "[PASS] Pipe transport connected"
-
     $pipe.ReadMode = [System.IO.Pipes.PipeTransmissionMode]::Byte
   }
   catch {
@@ -104,16 +152,13 @@ try {
       Write-Host "[INFO] Last 80 ToolHub log lines:"
       Get-Content $logPath -Tail 80
     }
-    else {
-      Write-Warning "ToolHub log not found: $logPath"
-    }
-
     throw
   }
 
   Write-Host "[STEP] Waiting for ToolHub hello..."
   $hello = Read-Frame -Stream $pipe
   Write-Host "[PASS] ToolHub hello received"
+
   if ($hello.type -ne "hello" -or
       $hello.protocol -ne "cc-pipe-v1" -or
       $hello.module_id -ne "toolhub") {
@@ -126,47 +171,34 @@ try {
     protocol = "cc-pipe-v1"
   }
   Write-Host "[PASS] hello-ack sent"
+  Write-Host "[PASS] cc-pipe-v1 handshake"
 
-  $requestId = 2001
-  Write-Host "[STEP] Sending GET /dashboard..."
-  Write-Frame -Stream $pipe -Value @{
-    type = "http.request"
-    request_id = $requestId
-    method = "GET"
-    path = "/dashboard"
-    query = ""
-    content_type = $null
-    accept = "application/json"
-    body_b64 = $null
+  $health = Invoke-CcHttp -Stream $pipe -RequestId 2000 -Method "GET" -Path "/health"
+  if ($health.Status -ne 200) {
+    throw "GET /health returned HTTP $($health.Status): $($health.Body)"
+  }
+  Write-Host "[PASS] GET /health -> HTTP 200"
+  Write-Host $health.Body
+
+  $dashboard = Invoke-CcHttp -Stream $pipe -RequestId 2001 -Method "GET" -Path "/dashboard"
+  if ($dashboard.Status -ne 200) {
+    throw "GET /dashboard returned HTTP $($dashboard.Status): $($dashboard.Body)"
+  }
+  Write-Host "[PASS] GET /dashboard -> HTTP 200"
+  Write-Host $dashboard.Body
+}
+catch {
+  Write-Host ""
+  Write-Host "[FAIL] $($_.Exception.Message)"
+
+  $logPath = Join-Path $env:LOCALAPPDATA "MCP-ToolHub\logs\toolhub-gui.log"
+  if (Test-Path $logPath) {
+    Write-Host ""
+    Write-Host "[INFO] Last 80 ToolHub log lines:"
+    Get-Content $logPath -Tail 80
   }
 
-  Write-Host "[STEP] Waiting for http.response..."
-  while ($true) {
-    $message = Read-Frame -Stream $pipe
-
-    if ($message.type -eq "error.set" -or $message.type -eq "error.clear") {
-      Write-Host "[MAILBOX] $($message | ConvertTo-Json -Compress)"
-      continue
-    }
-
-    if ($message.type -eq "http.response" -and
-        [uint64]$message.request_id -eq [uint64]$requestId) {
-      $body = if ($null -ne $message.body_b64) {
-        [Text.Encoding]::UTF8.GetString(
-          [Convert]::FromBase64String([string]$message.body_b64)
-        )
-      } else {
-        ""
-      }
-
-      Write-Host "[PASS] cc-pipe-v1 handshake"
-      Write-Host "[PASS] GET /dashboard -> HTTP $($message.status)"
-      Write-Host $body
-      break
-    }
-
-    Write-Host "[INFO] Ignoring frame: $($message | ConvertTo-Json -Compress)"
-  }
+  throw
 }
 finally {
   $pipe.Dispose()
