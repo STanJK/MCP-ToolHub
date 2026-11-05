@@ -12,15 +12,6 @@ use sysinfo::{Pid, System};
 const HEALTH_ADDR: &str = "127.0.0.1:8080";
 const HEALTH_PORT: u16 = 8080;
 
-#[cfg(windows)]
-fn hide_window(command: &mut Command) {
-    use std::os::windows::process::CommandExt;
-    command.creation_flags(0x08000000);
-}
-
-#[cfg(not(windows))]
-fn hide_window(_command: &mut Command) {}
-
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TunnelSnapshot {
@@ -115,7 +106,7 @@ impl TunnelManager {
     fn listener_pid() -> Option<u32> {
         let mut command = Command::new("netstat.exe");
         command.args(["-ano", "-p", "tcp"]);
-        hide_window(&mut command);
+        crate::background_process::configure_no_window(&mut command);
         let output = command.output().ok()?;
         if !output.status.success() {
             return None;
@@ -277,7 +268,7 @@ impl TunnelManager {
             .env("TOOLHUB_CONFIG", &self.config_path)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
-        hide_window(&mut command);
+        crate::background_process::configure_no_window(&mut command);
 
         let output = command
             .output()
@@ -361,7 +352,7 @@ impl TunnelManager {
         let mut command = Command::new("taskkill.exe");
         command.args(["/PID", &pid.to_string(), "/T", "/F"]);
         command.stdout(Stdio::null()).stderr(Stdio::null());
-        hide_window(&mut command);
+        crate::background_process::configure_no_window(&mut command);
         let status = command.status();
 
         if let Err(error) = status {
@@ -402,7 +393,7 @@ impl TunnelManager {
         let mut command = Command::new("taskkill.exe");
         command.args(["/PID", &owner.pid.to_string(), "/T", "/F"]);
         command.stdout(Stdio::null()).stderr(Stdio::null());
-        hide_window(&mut command);
+        crate::background_process::configure_no_window(&mut command);
         let status = command
             .status()
             .map_err(|error| format!("Failed to stop existing tunnel PID {}: {error}", owner.pid))?;
@@ -515,7 +506,7 @@ impl TunnelManager {
             .env("TOOLHUB_CONFIG", &self.config_path)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
-        hide_window(&mut command);
+        crate::background_process::configure_no_window(&mut command);
 
         let mut child = command.spawn().map_err(|error| {
             let message = format!("Failed to start run-tunnel.ps1: {error}");
