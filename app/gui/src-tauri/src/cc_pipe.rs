@@ -448,6 +448,11 @@ fn route_http(
     body: Vec<u8>,
 ) -> HttpResult {
     match (method, path) {
+        ("GET", "/health") => HttpResult::json(200, &json!({
+            "ok": true,
+            "module": MODULE_ID,
+            "protocol": PROTOCOL
+        })),
         ("GET", "/dashboard") => HttpResult::json(200, &crate::dashboard_snapshot_impl(runtime)),
         ("POST", "/tunnel/restart") => match runtime.tunnel.restart() {
             Ok(snapshot) => HttpResult::json(200, &snapshot),
