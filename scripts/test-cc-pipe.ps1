@@ -53,6 +53,18 @@ function Write-Frame {
   $Stream.Flush()
 }
 
+$pipePath = "\\.\pipe\$pipeName"
+$visiblePipe = Get-ChildItem "\\.\pipe\" -ErrorAction SilentlyContinue |
+  Where-Object { $_.Name -eq $pipeName } |
+  Select-Object -First 1
+
+if ($visiblePipe) {
+  Write-Host "[INFO] Pipe exists: $pipePath"
+}
+else {
+  Write-Warning "Pipe is not currently visible: $pipePath"
+}
+
 $pipe = [System.IO.Pipes.NamedPipeClientStream]::new(
   ".",
   $pipeName,
@@ -60,7 +72,26 @@ $pipe = [System.IO.Pipes.NamedPipeClientStream]::new(
 )
 
 try {
-  $pipe.Connect($ConnectTimeoutMs)
+  try {
+    $pipe.Connect($ConnectTimeoutMs)
+  }
+  catch {
+    Write-Host ""
+    Write-Host "[FAIL] Named pipe connect failed: $($_.Exception.Message)"
+    Write-Host "[INFO] Expected pipe: $pipePath"
+
+    $logPath = Join-Path $env:LOCALAPPDATA "MCP-ToolHub\logs\toolhub-gui.log"
+    if (Test-Path $logPath) {
+      Write-Host ""
+      Write-Host "[INFO] Last 80 ToolHub log lines:"
+      Get-Content $logPath -Tail 80
+    }
+    else {
+      Write-Warning "ToolHub log not found: $logPath"
+    }
+
+    throw
+  }
 
   $hello = Read-Frame -Stream $pipe
   if ($hello.type -ne "hello" -or
