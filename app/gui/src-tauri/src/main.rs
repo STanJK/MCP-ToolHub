@@ -1,7 +1,11 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 use std::path::PathBuf;
+use std::thread;
+use std::time::Duration;
 
 use serde::Serialize;
-use tauri::{Manager, State};
+use tauri::State;
 
 mod cc_pipe;
 mod config;
@@ -42,6 +46,73 @@ fn app_log_dir() -> PathBuf {
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
         .join("MCP-ToolHub")
         .join("logs")
+}
+
+fn create_runtime() -> Result<AppRuntime, String> {
+    let logs = logging::install(app_log_dir())?;
+    let repo_root = config::repo_root()?;
+    let config_path = config::toolhub_config_path(&repo_root);
+    let tunnel = TunnelManager::new(repo_root.clone(), config_path.clone());
+
+    Ok(AppRuntime {
+        repo_root,
+        config_path,
+        tunnel,
+        logs,
+    })
+}
+
+fn start_bootstrap(runtime: &AppRuntime) -> Result<(), String> {
+    let bootstrap_tunnel = runtime.tunnel.clone();
+    thread::Builder::new()
+        .name("ToolHubBootstrap".to_string())
+        .spawn(move || {
+            log::info!(
+                target: "toolhub::bootstrap",
+                "Bootstrap requested; starting ToolHub tunnel automatically"
+            );
+
+            match bootstrap_tunnel.restart() {
+                Ok(snapshot) => log::info!(
+                    target: "toolhub::bootstrap",
+                    "Bootstrap tunnel start completed: phase={} connection={}",
+                    snapshot.phase,
+                    snapshot.connection
+                ),
+                Err(error) => log::error!(
+                    target: "toolhub::bootstrap",
+                    "Bootstrap tunnel start failed: {error}"
+                ),
+            }
+        })
+        .map(|_| ())
+        .map_err(|error| format!("start ToolHub bootstrap thread failed: {error}"))
+}
+
+fn run_cc_backend(bootstrap_requested: bool) -> Result<(), String> {
+    let runtime = create_runtime()?;
+
+    log::info!(
+        target: "toolhub::cc",
+        "Starting true headless CC backend; repo={} config={}",
+        runtime.repo_root.display(),
+        runtime.config_path.display()
+    );
+
+    cc_pipe::start(runtime.clone())?;
+
+    if bootstrap_requested {
+        start_bootstrap(&runtime)?;
+    }
+
+    log::info!(
+        target: "toolhub::cc",
+        "Headless CC backend ready; pipe=\\\\.\\pipe\\STanJK-CC-toolhub"
+    );
+
+    loop {
+        thread::sleep(Duration::from_secs(3600));
+    }
 }
 
 pub(crate) fn dashboard_snapshot_impl(runtime: &AppRuntime) -> DashboardSnapshot {
@@ -151,74 +222,25 @@ async fn probe_module(
     .map_err(|error| error.to_string())?
 }
 
-fn main() {
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    let bootstrap_requested = args.iter().any(|arg| {
-        arg.eq_ignore_ascii_case("--bootstrap") || arg.eq_ignore_ascii_case("-bootstrap")
-    });
-    let cc_backend_requested = args
-        .iter()
-        .any(|arg| arg.eq_ignore_ascii_case("--cc-backend"));
-
+fn run_gui(bootstrap_requested: bool) {
     tauri::Builder::default()
         .setup(move |app| {
-            let logs = logging::install(app_log_dir()).map_err(std::io::Error::other)?;
-            let repo_root = config::repo_root().map_err(std::io::Error::other)?;
-            let config_path = config::toolhub_config_path(&repo_root);
-            let tunnel = TunnelManager::new(repo_root.clone(), config_path.clone());
-
-            let runtime = AppRuntime {
-                repo_root,
-                config_path,
-                tunnel,
-                logs,
-            };
+            let runtime = create_runtime().map_err(std::io::Error::other)?;
 
             log::info!(
                 target: "toolhub::gui",
-                "MCP-ToolHub backend started; repo={} config={} cc_backend={}",
+                "MCP-ToolHub GUI started; repo={} config={}",
                 runtime.repo_root.display(),
-                runtime.config_path.display(),
-                cc_backend_requested
+                runtime.config_path.display()
             );
 
-            if cc_backend_requested {
-                if let Some(window) = app.get_webview_window("main") {
-                    window.hide().map_err(std::io::Error::other)?;
-                }
-            }
-
-            cc_pipe::start(runtime.clone(), app.handle().clone())
-                .map_err(std::io::Error::other)?;
-
-            let bootstrap_tunnel = runtime.tunnel.clone();
-            app.manage(runtime);
+            cc_pipe::start(runtime.clone()).map_err(std::io::Error::other)?;
 
             if bootstrap_requested {
-                std::thread::Builder::new()
-                    .name("ToolHubBootstrap".to_string())
-                    .spawn(move || {
-                        log::info!(
-                            target: "toolhub::bootstrap",
-                            "Bootstrap requested; starting ToolHub tunnel automatically"
-                        );
-
-                        match bootstrap_tunnel.restart() {
-                            Ok(snapshot) => log::info!(
-                                target: "toolhub::bootstrap",
-                                "Bootstrap tunnel start completed: phase={} connection={}",
-                                snapshot.phase,
-                                snapshot.connection
-                            ),
-                            Err(error) => log::error!(
-                                target: "toolhub::bootstrap",
-                                "Bootstrap tunnel start failed: {error}"
-                            ),
-                        }
-                    })
-                    .map_err(std::io::Error::other)?;
+                start_bootstrap(&runtime).map_err(std::io::Error::other)?;
             }
 
+            app.manage(runtime);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -233,4 +255,24 @@ fn main() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running MCP-ToolHub GUI");
+}
+
+fn main() {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let bootstrap_requested = args.iter().any(|arg| {
+        arg.eq_ignore_ascii_case("--bootstrap") || arg.eq_ignore_ascii_case("-bootstrap")
+    });
+    let cc_backend_requested = args
+        .iter()
+        .any(|arg| arg.eq_ignore_ascii_case("--cc-backend"));
+
+    if cc_backend_requested {
+        if let Err(error) = run_cc_backend(bootstrap_requested) {
+            eprintln!("MCP-ToolHub CC backend failed: {error}");
+            std::process::exit(1);
+        }
+        return;
+    }
+
+    run_gui(bootstrap_requested);
 }
