@@ -1,5 +1,6 @@
 param(
-  [int]$ConnectTimeoutMs = 5000
+  [int]$ConnectTimeoutMs = 5000,
+  [int]$IoTimeoutMs = 5000
 )
 
 $ErrorActionPreference = "Stop"
@@ -13,7 +14,12 @@ function Read-Exact {
 
   $offset = 0
   while ($offset -lt $Buffer.Length) {
-    $read = $Stream.Read($Buffer, $offset, $Buffer.Length - $offset)
+    $task = $Stream.ReadAsync($Buffer, $offset, $Buffer.Length - $offset)
+    if (-not $task.Wait($IoTimeoutMs)) {
+      throw "Timed out after $IoTimeoutMs ms while reading from the CC pipe."
+    }
+
+    $read = $task.Result
     if ($read -le 0) {
       throw "Pipe closed while reading a frame."
     }
@@ -48,8 +54,16 @@ function Write-Frame {
   $payload = [Text.Encoding]::UTF8.GetBytes($json)
   $lengthBytes = [BitConverter]::GetBytes([uint32]$payload.Length)
 
-  $Stream.Write($lengthBytes, 0, $lengthBytes.Length)
-  $Stream.Write($payload, 0, $payload.Length)
+  $lengthTask = $Stream.WriteAsync($lengthBytes, 0, $lengthBytes.Length)
+  if (-not $lengthTask.Wait($IoTimeoutMs)) {
+    throw "Timed out after $IoTimeoutMs ms while writing the CC pipe frame length."
+  }
+
+  $payloadTask = $Stream.WriteAsync($payload, 0, $payload.Length)
+  if (-not $payloadTask.Wait($IoTimeoutMs)) {
+    throw "Timed out after $IoTimeoutMs ms while writing the CC pipe payload."
+  }
+
   $Stream.Flush()
 }
 
