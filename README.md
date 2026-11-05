@@ -234,6 +234,32 @@ For local stdio MCP testing:
 npx @modelcontextprotocol/inspector node .\src\index.mjs
 ```
 
+## STanJK PC Control Center
+
+ToolHub implements **CC Module Spec v1** without replacing its existing launch paths.
+
+The Control Center boundary is intentionally limited to:
+
+```text
+cc-module.json
+    -> bin/cc-interface.exe
+       -> probe / start / stop
+```
+
+CC-managed startup reuses the existing tunnel scripts internally. ToolHub diagnostics, module state, logs, configuration, MCP catalogs, and business UI remain ToolHub-owned.
+
+Build and stage the lifecycle adapter:
+
+```powershell
+npm run cc:build
+```
+
+Then onboard the ToolHub repository root with Control Center and use **Reload All**.
+
+The existing `run-tunnel.ps1`, standalone GUI/`-bootstrap`, and DSH `--local` entry points remain supported when CC is not the lifecycle owner.
+
+See [docs/CONTROL_CENTER.md](docs/CONTROL_CENTER.md) for the package, lifecycle, Error Mailbox, onboarding, and compatibility contract.
+
 ## Local mode / DeepSeek Harness
 
 ToolHub can run directly as a local stdio MCP server without OpenAI Secure MCP Tunnel:
