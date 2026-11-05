@@ -28,6 +28,7 @@ const readyUrl = process.env.TOOLHUB_CC_READY_URL || "http://127.0.0.1:8080/read
 
 let child = null;
 let lastMailboxState = undefined;
+let desiredErrorCode = null;
 let notReadySince = null;
 let readinessTimer = null;
 let exiting = false;
@@ -80,6 +81,8 @@ async function postMailbox(payload) {
 }
 
 async function setError(code, summary, detail) {
+  desiredErrorCode = code;
+
   if (lastMailboxState === code) {
     return;
   }
@@ -99,6 +102,8 @@ async function setError(code, summary, detail) {
 }
 
 async function clearError() {
+  desiredErrorCode = null;
+
   if (lastMailboxState === null) {
     return;
   }
@@ -281,31 +286,37 @@ process.on("exit", () => {
 
 process.on("uncaughtException", async (error) => {
   log("error", error?.stack ?? error?.message ?? String(error));
-  await setError(
-    "toolhub-cc-runtime-failed",
-    "ToolHub Control Center runtime failed",
-    error?.message ?? String(error)
-  );
+  if (!desiredErrorCode) {
+    await setError(
+      "toolhub-cc-runtime-failed",
+      "ToolHub Control Center runtime failed",
+      error?.message ?? String(error)
+    );
+  }
   await shutdown(1);
 });
 
 process.on("unhandledRejection", async (reason) => {
   const message = reason instanceof Error ? reason.message : String(reason);
   log("error", `unhandled rejection: ${message}`);
-  await setError(
-    "toolhub-cc-runtime-failed",
-    "ToolHub Control Center runtime failed",
-    message
-  );
+  if (!desiredErrorCode) {
+    await setError(
+      "toolhub-cc-runtime-failed",
+      "ToolHub Control Center runtime failed",
+      message
+    );
+  }
   await shutdown(1);
 });
 
 void main().catch(async (error) => {
   log("error", error?.stack ?? error?.message ?? String(error));
-  await setError(
-    "toolhub-cc-runtime-failed",
-    "ToolHub Control Center runtime failed",
-    error?.message ?? String(error)
-  );
+  if (!desiredErrorCode) {
+    await setError(
+      "toolhub-cc-runtime-failed",
+      "ToolHub Control Center runtime failed",
+      error?.message ?? String(error)
+    );
+  }
   await shutdown(1);
 });
