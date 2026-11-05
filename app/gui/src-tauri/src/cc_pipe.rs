@@ -1,21 +1,18 @@
 use std::fs::File;
 use std::io::{Read, Write};
 use std::os::windows::io::{AsRawHandle, FromRawHandle};
-use std::sync::{
-    atomic::{AtomicU64, Ordering},
-    Arc, Mutex, RwLock,
-};
+use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use serde_json::{json, Value};
 use windows_sys::Win32::Foundation::{
-    GetLastError, ERROR_PIPE_CONNECTED, INVALID_HANDLE_VALUE,
+    GetLastError, ERROR_BROKEN_PIPE, ERROR_NO_DATA, ERROR_PIPE_CONNECTED, INVALID_HANDLE_VALUE,
 };
 use windows_sys::Win32::Storage::FileSystem::PIPE_ACCESS_DUPLEX;
 use windows_sys::Win32::System::Pipes::{
-    ConnectNamedPipe, CreateNamedPipeW, DisconnectNamedPipe, PIPE_READMODE_BYTE,
+    ConnectNamedPipe, CreateNamedPipeW, DisconnectNamedPipe, PeekNamedPipe, PIPE_READMODE_BYTE,
     PIPE_REJECT_REMOTE_CLIENTS, PIPE_TYPE_BYTE, PIPE_UNLIMITED_INSTANCES, PIPE_WAIT,
 };
 
@@ -25,47 +22,6 @@ const PIPE_NAME: &str = r"\\.\pipe\STanJK-CC-toolhub";
 const PROTOCOL: &str = "cc-pipe-v1";
 const MODULE_ID: &str = "toolhub";
 const MAX_FRAME_BYTES: usize = 4 * 1024 * 1024;
-
-#[derive(Clone)]
-struct PipeBridge {
-    connection: Arc<RwLock<Option<Arc<Connection>>>>,
-    generation: Arc<AtomicU64>,
-}
-
-impl PipeBridge {
-    fn new() -> Self {
-        Self {
-            connection: Arc::new(RwLock::new(None)),
-            generation: Arc::new(AtomicU64::new(0)),
-        }
-    }
-
-    fn set_connection(&self, connection: Arc<Connection>) {
-        if let Ok(mut slot) = self.connection.write() {
-            *slot = Some(connection);
-            self.generation.fetch_add(1, Ordering::SeqCst);
-        }
-    }
-
-    fn clear_connection(&self, connection: &Arc<Connection>) {
-        if let Ok(mut slot) = self.connection.write() {
-            if slot.as_ref().is_some_and(|current| Arc::ptr_eq(current, connection)) {
-                *slot = None;
-                self.generation.fetch_add(1, Ordering::SeqCst);
-            }
-        }
-    }
-
-    fn snapshot(&self) -> (u64, Option<Arc<Connection>>) {
-        let generation = self.generation.load(Ordering::SeqCst);
-        let connection = self
-            .connection
-            .read()
-            .ok()
-            .and_then(|slot| slot.as_ref().cloned());
-        (generation, connection)
-    }
-}
 
 struct Connection {
     writer: Mutex<File>,
@@ -129,23 +85,18 @@ impl HttpResult {
 }
 
 pub fn start(runtime: AppRuntime) -> Result<(), String> {
-    let bridge = PipeBridge::new();
     let first_pipe = create_pipe_instance()
         .map_err(|error| format!("create initial CC pipe instance failed: {error}"))?;
 
-    {
-        let runtime = runtime.clone();
-        let bridge = bridge.clone();
-        thread::Builder::new()
-            .name("ToolHubCcPipeServer".to_string())
-            .spawn(move || server_loop(runtime, bridge, Some(first_pipe)))
-            .map_err(|error| format!("start CC pipe server failed: {error}"))?;
-    }
+    thread::Builder::new()
+        .name("ToolHubCcPipeServer".to_string())
+        .spawn(move || server_loop(runtime, Some(first_pipe)))
+        .map_err(|error| format!("start CC pipe server failed: {error}"))?;
 
     Ok(())
 }
 
-fn server_loop(runtime: AppRuntime, bridge: PipeBridge, mut next_pipe: Option<File>) {
+fn server_loop(runtime: AppRuntime, mut next_pipe: Option<File>) {
     log::info!(
         target: "toolhub::cc",
         "CC Pipe Adapter listening at {PIPE_NAME}"
@@ -181,13 +132,6 @@ fn server_loop(runtime: AppRuntime, bridge: PipeBridge, mut next_pipe: Option<Fi
                 match handshake(&mut reader, &connection) {
                     Ok(()) => {
                         log::info!(target: "toolhub::cc", "CC pipe session bound");
-                        bridge.set_connection(Arc::clone(&connection));
-                        if let Err(error) = send_error_mailbox_snapshot(&runtime, &connection) {
-                            log::warn!(
-                                target: "toolhub::cc",
-                                "initial Error Mailbox snapshot failed: {error}"
-                            );
-                        }
                         if let Err(error) = serve_session(
                             &mut reader,
                             Arc::clone(&connection),
@@ -195,7 +139,6 @@ fn server_loop(runtime: AppRuntime, bridge: PipeBridge, mut next_pipe: Option<Fi
                         ) {
                             log::warn!(target: "toolhub::cc", "CC pipe session ended: {error}");
                         }
-                        bridge.clear_connection(&connection);
                     }
                     Err(error) => {
                         log::warn!(target: "toolhub::cc", "CC pipe handshake failed: {error}");
@@ -285,7 +228,27 @@ fn serve_session(
     connection: Arc<Connection>,
     runtime: AppRuntime,
 ) -> Result<(), String> {
+    let mut mailbox_state: Option<Option<String>> = None;
+    let mut next_mailbox_check = Instant::now();
+
     loop {
+        let now = Instant::now();
+        if now >= next_mailbox_check {
+            maybe_send_error_mailbox(&runtime, &connection, &mut mailbox_state)?;
+            next_mailbox_check = now + Duration::from_millis(500);
+        }
+
+        match pipe_bytes_available(reader)? {
+            PipeAvailability::Disconnected => {
+                return Err("CC pipe client disconnected".to_string());
+            }
+            PipeAvailability::Available(0) => {
+                thread::sleep(Duration::from_millis(20));
+                continue;
+            }
+            PipeAvailability::Available(_) => {}
+        }
+
         let message = read_value(reader)?;
         match message.get("type").and_then(Value::as_str) {
             Some("http.request") => {
@@ -321,7 +284,6 @@ fn serve_session(
                     target: "toolhub::cc",
                     "CC http.response sent: request_id={request_id}"
                 );
-                send_error_mailbox_snapshot(&runtime, &connection)?;
             }
             Some("lifecycle.stop") => {
                 let request_id = message
@@ -371,6 +333,39 @@ fn serve_session(
                 );
             }
         }
+    }
+}
+
+enum PipeAvailability {
+    Available(u32),
+    Disconnected,
+}
+
+fn pipe_bytes_available(file: &File) -> Result<PipeAvailability, String> {
+    let mut available = 0u32;
+    let ok = unsafe {
+        PeekNamedPipe(
+            file.as_raw_handle() as _,
+            std::ptr::null_mut(),
+            0,
+            std::ptr::null_mut(),
+            &mut available,
+            std::ptr::null_mut(),
+        )
+    };
+
+    if ok != 0 {
+        return Ok(PipeAvailability::Available(available));
+    }
+
+    let error = unsafe { GetLastError() };
+    if error == ERROR_BROKEN_PIPE || error == ERROR_NO_DATA {
+        Ok(PipeAvailability::Disconnected)
+    } else {
+        Err(format!(
+            "PeekNamedPipe failed: {}",
+            std::io::Error::from_raw_os_error(error as i32)
+        ))
     }
 }
 
@@ -530,11 +525,19 @@ fn query_value<'a>(query: &'a str, key: &str) -> Option<&'a str> {
     })
 }
 
-fn send_error_mailbox_snapshot(
+fn maybe_send_error_mailbox(
     runtime: &AppRuntime,
     connection: &Connection,
+    last_sent: &mut Option<Option<String>>,
 ) -> Result<(), String> {
-    match top_level_error(runtime) {
+    let desired = top_level_error(runtime);
+    let desired_code = desired.as_ref().map(|(code, _, _)| code.clone());
+
+    if last_sent.as_ref() == Some(&desired_code) {
+        return Ok(());
+    }
+
+    match desired {
         Some((code, summary, detail)) => connection.send_value(&json!({
             "type": "error.set",
             "error": {
@@ -542,11 +545,14 @@ fn send_error_mailbox_snapshot(
                 "summary": summary,
                 "detail": detail
             }
-        })),
+        }))?,
         None => connection.send_value(&json!({
             "type": "error.clear"
-        })),
+        }))?,
     }
+
+    *last_sent = Some(desired_code);
+    Ok(())
 }
 
 fn top_level_error(runtime: &AppRuntime) -> Option<(String, String, Option<String>)> {
