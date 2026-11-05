@@ -1,27 +1,39 @@
 $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
-$manifestPath = Join-Path $repoRoot "cc-interface\Cargo.toml"
-$sourceExe = Join-Path $repoRoot "cc-interface\target\release\mcp-toolhub-cc-interface.exe"
+$guiRoot = Join-Path $repoRoot "app\gui"
+$sourceExe = Join-Path $guiRoot "src-tauri\target\release\mcp-toolhub-gui-host.exe"
+$uiEntry = Join-Path $guiRoot "dist\index.html"
 $binDir = Join-Path $repoRoot "bin"
-$targetExe = Join-Path $binDir "cc-interface.exe"
+$targetExe = Join-Path $binDir "mcp-toolhub-gui-host.exe"
 
-$cargo = Get-Command cargo.exe -ErrorAction SilentlyContinue
-if (-not $cargo) {
-  throw "cargo.exe not found in PATH"
+$npm = Get-Command npm.cmd -ErrorAction SilentlyContinue
+if (-not $npm) {
+  throw "npm.cmd not found in PATH"
 }
 
-& $cargo.Source build --manifest-path $manifestPath --release --locked
-if ($LASTEXITCODE -ne 0) {
-  throw "CC interface build failed with exit code $LASTEXITCODE"
+Push-Location $guiRoot
+try {
+  & $npm.Source run tauri:build
+  if ($LASTEXITCODE -ne 0) {
+    throw "ToolHub Tauri build failed with exit code $LASTEXITCODE"
+  }
+}
+finally {
+  Pop-Location
 }
 
 if (-not (Test-Path $sourceExe)) {
-  throw "Built CC interface not found: $sourceExe"
+  throw "Built ToolHub backend not found: $sourceExe"
+}
+
+if (-not (Test-Path $uiEntry)) {
+  throw "Built ToolHub static UI not found: $uiEntry"
 }
 
 New-Item -ItemType Directory -Force -Path $binDir | Out-Null
 Copy-Item -Force $sourceExe $targetExe
 
-Write-Host "Staged CC Module Spec v1 interface:"
-Write-Host $targetExe
+Write-Host "CC Module Spec v1 package staged:"
+Write-Host "Backend: $targetExe"
+Write-Host "UI:      $uiEntry"
