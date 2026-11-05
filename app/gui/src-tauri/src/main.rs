@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use serde::Serialize;
 use tauri::{Manager, State};
 
+mod cc_pipe;
 mod config;
 mod logging;
 mod modules;
@@ -13,16 +14,17 @@ use logging::{LogEntry, LogRuntime};
 use modules::ModuleProbe;
 use tunnel::{TunnelManager, TunnelSnapshot};
 
-struct AppRuntime {
-    repo_root: PathBuf,
-    config_path: PathBuf,
-    tunnel: TunnelManager,
-    logs: LogRuntime,
+#[derive(Clone)]
+pub(crate) struct AppRuntime {
+    pub(crate) repo_root: PathBuf,
+    pub(crate) config_path: PathBuf,
+    pub(crate) tunnel: TunnelManager,
+    pub(crate) logs: LogRuntime,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct DashboardSnapshot {
+pub(crate) struct DashboardSnapshot {
     overall_status: String,
     version: String,
     config_path: String,
@@ -42,8 +44,7 @@ fn app_log_dir() -> PathBuf {
         .join("logs")
 }
 
-#[tauri::command]
-fn dashboard_snapshot(runtime: State<'_, AppRuntime>) -> DashboardSnapshot {
+pub(crate) fn dashboard_snapshot_impl(runtime: &AppRuntime) -> DashboardSnapshot {
     let tunnel = runtime.tunnel.snapshot();
     let loaded = config::load(&runtime.config_path);
 
@@ -51,7 +52,13 @@ fn dashboard_snapshot(runtime: State<'_, AppRuntime>) -> DashboardSnapshot {
         Ok(config) => {
             let count = config.modules.len();
             let enabled = config.modules.values().filter(|module| module.enabled).count();
-            (Some(config.tunnel.name), Some(config.tunnel.id), count, enabled, true)
+            (
+                Some(config.tunnel.name),
+                Some(config.tunnel.id),
+                count,
+                enabled,
+                true,
+            )
         }
         Err(error) => {
             log::warn!(target: "toolhub::config", "{error}");
@@ -68,7 +75,8 @@ fn dashboard_snapshot(runtime: State<'_, AppRuntime>) -> DashboardSnapshot {
         "degraded"
     } else {
         tunnel.phase.as_str()
-    }.to_string();
+    }
+    .to_string();
 
     DashboardSnapshot {
         overall_status,
@@ -80,6 +88,11 @@ fn dashboard_snapshot(runtime: State<'_, AppRuntime>) -> DashboardSnapshot {
         enabled_module_count,
         tunnel,
     }
+}
+
+#[tauri::command]
+fn dashboard_snapshot(runtime: State<'_, AppRuntime>) -> DashboardSnapshot {
+    dashboard_snapshot_impl(&runtime)
 }
 
 #[tauri::command]
@@ -106,7 +119,10 @@ fn module_list(runtime: State<'_, AppRuntime>) -> Result<Vec<ModuleSummary>, Str
 }
 
 #[tauri::command]
-fn module_config(module_id: String, runtime: State<'_, AppRuntime>) -> Result<ModuleConfigView, String> {
+fn module_config(
+    module_id: String,
+    runtime: State<'_, AppRuntime>,
+) -> Result<ModuleConfigView, String> {
     config::read_module_config(&runtime.config_path, &module_id)
 }
 
@@ -122,18 +138,27 @@ fn save_module_config(
 }
 
 #[tauri::command]
-async fn probe_module(module_id: String, runtime: State<'_, AppRuntime>) -> Result<ModuleProbe, String> {
+async fn probe_module(
+    module_id: String,
+    runtime: State<'_, AppRuntime>,
+) -> Result<ModuleProbe, String> {
     let repo_root = runtime.repo_root.clone();
     let config_path = runtime.config_path.clone();
-    tauri::async_runtime::spawn_blocking(move || modules::probe(&repo_root, &config_path, &module_id))
-        .await
-        .map_err(|error| error.to_string())?
+    tauri::async_runtime::spawn_blocking(move || {
+        modules::probe(&repo_root, &config_path, &module_id)
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 fn main() {
-    let bootstrap_requested = std::env::args().skip(1).any(|arg| {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let bootstrap_requested = args.iter().any(|arg| {
         arg.eq_ignore_ascii_case("--bootstrap") || arg.eq_ignore_ascii_case("-bootstrap")
     });
+    let cc_backend_requested = args
+        .iter()
+        .any(|arg| arg.eq_ignore_ascii_case("--cc-backend"));
 
     tauri::Builder::default()
         .setup(move |app| {
@@ -142,15 +167,32 @@ fn main() {
             let config_path = config::toolhub_config_path(&repo_root);
             let tunnel = TunnelManager::new(repo_root.clone(), config_path.clone());
 
+            let runtime = AppRuntime {
+                repo_root,
+                config_path,
+                tunnel,
+                logs,
+            };
+
             log::info!(
                 target: "toolhub::gui",
-                "MCP-ToolHub GUI started; repo={} config={}",
-                repo_root.display(),
-                config_path.display()
+                "MCP-ToolHub backend started; repo={} config={} cc_backend={}",
+                runtime.repo_root.display(),
+                runtime.config_path.display(),
+                cc_backend_requested
             );
 
-            let bootstrap_tunnel = tunnel.clone();
-            app.manage(AppRuntime { repo_root, config_path, tunnel, logs });
+            if cc_backend_requested {
+                if let Some(window) = app.get_webview_window("main") {
+                    window.hide().map_err(std::io::Error::other)?;
+                }
+            }
+
+            cc_pipe::start(runtime.clone(), app.handle().clone())
+                .map_err(std::io::Error::other)?;
+
+            let bootstrap_tunnel = runtime.tunnel.clone();
+            app.manage(runtime);
 
             if bootstrap_requested {
                 std::thread::Builder::new()
