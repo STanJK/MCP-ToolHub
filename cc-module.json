@@ -4,8 +4,15 @@
   "name": "MCP ToolHub",
   "version": "0.1.0",
   "description": "Local MCP runtime and Secure MCP Tunnel broker",
-  "interface": {
+  "backend": {
     "version": 1,
-    "entry": "bin/cc-interface.exe"
+    "entry": "bin/mcp-toolhub-gui-host.exe",
+    "args": [
+      "--cc-backend",
+      "--bootstrap"
+    ]
+  },
+  "ui": {
+    "entry": "app/gui/dist/index.html"
   }
 }
