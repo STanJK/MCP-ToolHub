@@ -20,6 +20,19 @@ import {
 } from "./lib/api";
 
 type Tone = "neutral" | "info" | "success" | "warning" | "danger";
+type LogCategory = "error" | "normal" | "debug";
+
+function logCategory(level: string): LogCategory {
+  switch (level.toUpperCase()) {
+    case "ERROR":
+      return "error";
+    case "DEBUG":
+    case "TRACE":
+      return "debug";
+    default:
+      return "normal";
+  }
+}
 
 function toneFor(status?: string | null): Tone {
   const value = (status ?? "").toLowerCase();
@@ -96,6 +109,39 @@ function SmallButton({
   );
 }
 
+function LogFilterButton({
+  label,
+  active,
+  tone,
+  onClick,
+}: {
+  label: string;
+  active: boolean;
+  tone: "error" | "normal" | "debug";
+  onClick: () => void;
+}) {
+  const activeClasses = {
+    error: "border-rose-500/50 bg-rose-500/15 text-rose-300",
+    normal: "border-emerald-500/50 bg-emerald-500/15 text-emerald-300",
+    debug: "border-sky-500/50 bg-sky-500/15 text-sky-300",
+  }[tone];
+
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      onClick={onClick}
+      className={`inline-flex h-8 items-center rounded-md border px-2.5 text-xs font-medium transition ${
+        active
+          ? activeClasses
+          : "border-slate-800 bg-slate-950 text-slate-600 hover:border-slate-700 hover:text-slate-400"
+      }`}
+    >
+      {label}
+    </button>
+  );
+}
+
 function StatCard({
   label,
   value,
@@ -143,6 +189,9 @@ export function App() {
   const [probeBusy, setProbeBusy] = useState(false);
   const [tunnelBusy, setTunnelBusy] = useState(false);
   const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [showErrorLogs, setShowErrorLogs] = useState(true);
+  const [showNormalLogs, setShowNormalLogs] = useState(true);
+  const [showDebugLogs, setShowDebugLogs] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const lastSequence = useRef(0);
   const logRef = useRef<HTMLDivElement>(null);
@@ -234,9 +283,21 @@ export function App() {
     };
   }, []);
 
+
+  const visibleLogs = useMemo(
+    () =>
+      logs.filter((entry) => {
+        const category = logCategory(entry.level);
+        if (category === "error") return showErrorLogs;
+        if (category === "debug") return showDebugLogs;
+        return showNormalLogs;
+      }),
+    [logs, showErrorLogs, showNormalLogs, showDebugLogs],
+  );
+
   useEffect(() => {
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight, behavior: "auto" });
-  }, [logs]);
+  }, [visibleLogs.length, showErrorLogs, showNormalLogs, showDebugLogs]);
 
   const selected = useMemo(
     () => modules.find((module) => module.id === selectedId) ?? null,
@@ -331,11 +392,37 @@ export function App() {
           <Pane
             title="Live Log"
             icon={<Logs size={16} />}
-            actions={<SmallButton onClick={() => void clearLogs()}>Clear</SmallButton>}
+            actions={
+              <>
+                <LogFilterButton
+                  label="Error"
+                  tone="error"
+                  active={showErrorLogs}
+                  onClick={() => setShowErrorLogs((value) => !value)}
+                />
+                <LogFilterButton
+                  label="Normal"
+                  tone="normal"
+                  active={showNormalLogs}
+                  onClick={() => setShowNormalLogs((value) => !value)}
+                />
+                <LogFilterButton
+                  label="Debug"
+                  tone="debug"
+                  active={showDebugLogs}
+                  onClick={() => setShowDebugLogs((value) => !value)}
+                />
+                <SmallButton onClick={() => void clearLogs()}>Clear</SmallButton>
+              </>
+            }
           >
             <div ref={logRef} className="h-full overflow-auto bg-[#080b10] p-2 font-mono text-[11px] leading-5">
-              {logs.length === 0 && <div className="text-slate-600">No ToolHub GUI logs yet.</div>}
-              {logs.map((entry) => (
+              {visibleLogs.length === 0 && (
+                <div className="text-slate-600">
+                  {logs.length === 0 ? "No ToolHub GUI logs yet." : "No logs match the selected filters."}
+                </div>
+              )}
+              {visibleLogs.map((entry) => (
                 <div key={entry.sequence} className="grid grid-cols-[64px_48px_120px_1fr] gap-2 border-b border-slate-900/70 py-0.5">
                   <span className="text-slate-600">{formatTime(entry.timestampMs)}</span>
                   <span className={
