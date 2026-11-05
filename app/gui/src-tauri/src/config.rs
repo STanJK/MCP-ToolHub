@@ -41,10 +41,22 @@ pub struct ModuleConfigView {
     pub content: String,
 }
 
+fn normalize_windows_path(path: PathBuf) -> PathBuf {
+    let text = path.to_string_lossy();
+    if let Some(stripped) = text.strip_prefix(r"\\?\UNC\") {
+        return PathBuf::from(format!(r"\\{}", stripped));
+    }
+    if let Some(stripped) = text.strip_prefix(r"\\?\") {
+        return PathBuf::from(stripped);
+    }
+    path
+}
+
 pub fn repo_root() -> Result<PathBuf, String> {
     if let Some(root) = std::env::var_os("CC_MODULE_ROOT").map(PathBuf::from) {
         return root
             .canonicalize()
+            .map(normalize_windows_path)
             .map_err(|error| format!("Failed to resolve CC_MODULE_ROOT {}: {error}", root.display()));
     }
 
