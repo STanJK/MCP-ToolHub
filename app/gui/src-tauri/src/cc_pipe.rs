@@ -262,17 +262,21 @@ fn disconnect_pipe(file: &File) {
 }
 
 fn handshake(reader: &mut File, connection: &Connection) -> Result<(), String> {
+    log::debug!(target: "toolhub::cc", "CC pipe transport connected; sending hello");
     connection.send_value(&json!({
         "type": "hello",
         "protocol": PROTOCOL,
         "module_id": MODULE_ID
     }))?;
+    log::debug!(target: "toolhub::cc", "CC pipe hello sent; waiting for hello-ack");
 
     let ack = read_value(reader)?;
+    log::debug!(target: "toolhub::cc", "CC pipe received handshake frame: {ack}");
     let valid = ack.get("type").and_then(Value::as_str) == Some("hello-ack")
         && ack.get("protocol").and_then(Value::as_str) == Some(PROTOCOL);
 
     if valid {
+        log::debug!(target: "toolhub::cc", "CC pipe hello-ack accepted");
         Ok(())
     } else {
         Err(format!("invalid hello-ack: {ack}"))
