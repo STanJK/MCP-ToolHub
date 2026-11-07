@@ -1,34 +1,41 @@
 version: 1
 
-# One remote-mcp module may aggregate multiple named remote MCP servers.
-# Server IDs are local static capability names and must match:
-#   [a-z0-9][a-z0-9-]*
-servers:
-  sleeprecord-server:
+# Preferred layout: provider -> profile.
+# Provider-level headers are inherited by every profile, which is useful when
+# several fixed remote environments share one account-level credential.
+providers:
+  cloudbase:
     enabled: true
-    url: 'https://sleep.example.com/mcp'
 
-    # HTTPS is required by default. Set true only for a trusted LAN/dev endpoint.
-    allow_insecure_http: false
-
-    # Fixed request headers. Secret values should normally come from the ToolHub
-    # process environment instead of being written directly into this file.
     headers:
-      Authorization:
-        env: TOOLHUB_SLEEPRECORD_TOKEN
-        prefix: 'Bearer '
+      X-TencentCloud-SecretId:
+        env: TOOLHUB_CLOUDBASE_SECRET_ID
+      X-TencentCloud-SecretKey:
+        env: TOOLHUB_CLOUDBASE_SECRET_KEY
 
-    # Explicit local trust policy for this server's upstream MCP tool catalog.
     allow_tools:
       - '*'
     deny_tools: []
 
-  # another-server:
-  #   enabled: false
-  #   url: 'https://another.example.com/mcp'
-  #   headers:
-  #     X-API-Key:
-  #       env: TOOLHUB_ANOTHER_SERVER_API_KEY
-  #   allow_tools:
-  #     - '*'
-  #   deny_tools: []
+    profiles:
+      sleep-record:
+        enabled: true
+        url: 'https://tcb-api.cloud.tencent.com/mcp/v1?env_id=replace-sleep-record-env-id'
+
+      edu-pulse-dev:
+        enabled: true
+        url: 'https://tcb-api.cloud.tencent.com/mcp/v1?env_id=edu-pulse-dev-d4gsaerix60a4ea6f'
+
+# Legacy flat server configs remain accepted for migration:
+#
+# servers:
+#   legacy-server:
+#     enabled: true
+#     url: 'https://example.com/mcp'
+#     headers:
+#       Authorization:
+#         env: TOOLHUB_LEGACY_TOKEN
+#         prefix: 'Bearer '
+#     allow_tools:
+#       - '*'
+#     deny_tools: []
