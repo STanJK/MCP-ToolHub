@@ -550,7 +550,7 @@ See `docs/JADX_MCP.md`.
 
 ## Remote MCP proxy
 
-`remote-mcp` is a generic multi-server forwarding module exposed through a fixed facade:
+`remote-mcp` is a generic forwarding module exposed through a fixed facade:
 
 ```text
 remote_mcp_status
@@ -558,22 +558,42 @@ remote_mcp_discover
 remote_mcp_call
 ```
 
-ToolHub stays behind the existing Secure MCP Tunnel; configured server profiles remain local static capabilities.
+The preferred configuration is now hierarchical:
 
 ```text
-ChatGPT cloud
-  -> OpenAI Secure MCP Tunnel
-  -> MCP-ToolHub
-     -> remote_mcp_call(server=sleeprecord-server, tool=queryEnv, ...)
-     -> fixed HTTPS URL + fixed auth headers
-     -> remote MCP server
+provider -> profile -> fixed remote environment
 ```
 
-`remote_mcp_discover` returns upstream schemas only on demand. Remote backend outages or missing runtime secrets do not change the connector-visible three-tool facade.
+For Tencent CloudBase:
 
-Local GUI backends are kept out of `remote-mcp`; JADX has its own dedicated `jadx-mcp` module.
+```text
+CloudBase
+  -> sleep-record
+  -> edu-pulse-dev
+```
+
+Provider-level headers can hold shared account credentials while each profile
+fixes its own endpoint/environment. Calls therefore select:
+
+```text
+remote_mcp_call(
+  provider = cloudbase,
+  profile = edu-pulse-dev,
+  tool = queryPgDatabase,
+  arguments = {...}
+)
+```
+
+The caller cannot provide the URL, `env_id`, or authentication headers.
+Environment routing stays local ToolHub policy. This is required for upstream
+tools such as `queryPgDatabase` whose schema does not expose an environment
+selector.
+
+Legacy flat `servers:` configs and the old `server=` selector remain accepted
+for migration, but new profiles should use `providers -> profiles`.
 
 See `docs/REMOTE_MCP.md`.
+
 ## OpenAI Secure MCP Tunnel
 
 Install the official tunnel client release and verify its SHA-256:
