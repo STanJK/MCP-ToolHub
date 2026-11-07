@@ -165,31 +165,98 @@ async function probeJadx(configPath) {
 
 async function probeRemote(configPath) {
   const cfg = parse(await readFile(configPath, "utf8"));
-  const servers = [];
+  const targets = [];
+
+  if (cfg.providers && typeof cfg.providers === "object" && !Array.isArray(cfg.providers)) {
+    for (const [providerId, provider] of Object.entries(cfg.providers)) {
+      if (provider?.enabled === false) continue;
+      for (const [profileId, profile] of Object.entries(provider?.profiles ?? {})) {
+        if (profile?.enabled === false) {
+          targets.push({
+            provider: providerId,
+            profile: profileId,
+            id: `${providerId}/${profileId}`,
+            status: "disabled",
+            toolCount: 0
+          });
+          continue;
+        }
+
+        targets.push({
+          provider: providerId,
+          profile: profileId,
+          id: `${providerId}/${profileId}`,
+          url: profile?.url,
+          headers: { ...(provider?.headers ?? {}), ...(profile?.headers ?? {}) },
+          allowTools: profile?.allow_tools ?? provider?.allow_tools ?? [],
+          denyTools: profile?.deny_tools ?? provider?.deny_tools ?? []
+        });
+      }
+    }
+  }
+
+  // Backward-compatible view for pre-provider local configs.
+  if (cfg.servers && typeof cfg.servers === "object" && !Array.isArray(cfg.servers)) {
+    for (const [serverId, server] of Object.entries(cfg.servers)) {
+      if (server?.enabled === false) {
+        targets.push({
+          provider: "legacy",
+          profile: serverId,
+          id: `legacy/${serverId}`,
+          legacyServer: serverId,
+          status: "disabled",
+          toolCount: 0
+        });
+        continue;
+      }
+      targets.push({
+        provider: "legacy",
+        profile: serverId,
+        id: `legacy/${serverId}`,
+        legacyServer: serverId,
+        url: server?.url,
+        headers: server?.headers ?? {},
+        allowTools: server?.allow_tools ?? [],
+        denyTools: server?.deny_tools ?? []
+      });
+    }
+  }
+
+  const profiles = [];
   const allTools = [];
 
-  for (const [serverId, server] of Object.entries(cfg.servers ?? {})) {
-    if (server?.enabled === false) {
-      servers.push({ id: serverId, status: "disabled", toolCount: 0 });
+  for (const target of targets) {
+    if (target.status === "disabled") {
+      profiles.push(target);
       continue;
     }
 
     try {
       const headers = {};
-      for (const [name, value] of Object.entries(server.headers ?? {})) {
-        headers[name] = resolveHeaderValue(serverId, name, value);
+      for (const [name, value] of Object.entries(target.headers ?? {})) {
+        headers[name] = resolveHeaderValue(target.id, name, value);
       }
       const tools = await listHttp(
-        server.url,
+        target.url,
         headers,
-        server.allow_tools ?? [],
-        server.deny_tools ?? []
+        target.allowTools,
+        target.denyTools
       );
-      servers.push({ id: serverId, status: "ready", toolCount: tools.length });
-      allTools.push(...tools.map((tool) => toolView(tool, serverId)));
+      profiles.push({
+        provider: target.provider,
+        profile: target.profile,
+        id: target.id,
+        ...(target.legacyServer ? { legacyServer: target.legacyServer } : {}),
+        status: "ready",
+        toolCount: tools.length
+      });
+      allTools.push(...tools.map((tool) => toolView(tool, target.id)));
     } catch (error) {
-      servers.push({
-        id: serverId,
+      profiles.push({
+        provider: target.provider,
+        profile: target.profile,
+        id: target.id,
+        ...(target.legacyServer ? { legacyServer: target.legacyServer } : {}),
         status: "offline",
         toolCount: 0,
         error: error instanceof Error ? error.message : String(error)
@@ -197,8 +264,8 @@ async function probeRemote(configPath) {
     }
   }
 
-  const enabled = servers.filter((server) => server.status !== "disabled");
-  const ready = enabled.filter((server) => server.status === "ready").length;
+  const enabled = profiles.filter((profile) => profile.status !== "disabled");
+  const ready = enabled.filter((profile) => profile.status === "ready").length;
   const status = enabled.length === 0
     ? "offline"
     : ready === enabled.length
@@ -207,13 +274,18 @@ async function probeRemote(configPath) {
         ? "degraded"
         : "offline";
 
+  const providers = [...new Set(profiles.map((profile) => profile.provider))].map((provider) => ({
+    provider,
+    profiles: profiles.filter((profile) => profile.provider === provider)
+  }));
+
   return {
     ok: status !== "offline",
     moduleId,
     status,
-    message: `Remote MCP: ${ready}/${enabled.length} enabled servers reachable.`,
+    message: `Remote MCP: ${ready}/${enabled.length} enabled profiles reachable.`,
     tools: allTools,
-    detail: { servers }
+    detail: { providers }
   };
 }
 
