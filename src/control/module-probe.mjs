@@ -289,6 +289,27 @@ async function probeRemote(configPath) {
   };
 }
 
+async function probeChromeMcp(configPath) {
+  const imported = await import(
+    pathToFileURL(path.join(repoRoot, "modules", "chrome-mcp", "index.mjs")).href
+  );
+  const instance = await imported.default({ moduleId: "chrome-mcp", configPath });
+  const descriptor = await instance.describe();
+  const snapshot = await instance.invoke("status", {});
+  return {
+    ok: true,
+    moduleId,
+    status: snapshot.status === "ready" ? "ready" : "stopped",
+    message: "Chrome MCP module loaded. Browser projects are started only on explicit start/discover/call.",
+    tools: descriptor.actions.map((action) => ({
+      name: action.id,
+      title: action.title ?? null,
+      description: action.description ?? null
+    })),
+    detail: snapshot
+  };
+}
+
 async function probeGeneric(configPath) {
   const imported = await import(pathToFileURL(path.join(repoRoot, "modules", moduleId, "index.mjs")).href);
   const instance = await imported.default({ moduleId, configPath });
@@ -330,6 +351,7 @@ async function main() {
     case "ida-pro": return await probeIda(configPath);
     case "jadx-mcp": return await probeJadx(configPath);
     case "remote-mcp": return await probeRemote(configPath);
+    case "chrome-mcp": return await probeChromeMcp(configPath);
     default: return await probeGeneric(configPath);
   }
 }
