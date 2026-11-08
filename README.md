@@ -711,6 +711,24 @@ modules/
     ida-pro.example.yaml
     ida-pro.local.yaml          # gitignored
 
+  jadx-mcp/
+    index.mjs
+    jadx-mcp.example.yaml
+    jadx-mcp.local.yaml         # gitignored
+
+  remote-mcp/
+    index.mjs
+    remote-mcp.example.yaml
+    remote-mcp.local.yaml       # gitignored
+
+  chrome-mcp/
+    index.mjs
+    chrome-mcp.example.yaml
+    chrome-mcp.local.yaml       # gitignored
+    project-profiles/
+      README.md
+      <project-id>/             # gitignored persistent browser state
+
 scripts/
   bootstrap-tunnel.ps1
   init-tunnel.ps1
@@ -723,6 +741,7 @@ docs/
   IDA_PRO_MCP.md
   REMOTE_MCP.md
   JADX_MCP.md
+  CHROME_MCP.md
 
 toolhub.example.yaml
 toolhub.local.yaml              # gitignored
