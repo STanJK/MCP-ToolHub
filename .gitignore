@@ -6,3 +6,7 @@ app/gui/dist/
 app/gui/src-tauri/target/
 *.log
 bin/mcp-toolhub-gui-host.exe
+
+# Persistent browser state: cookies, sessions, local storage, history, etc.
+modules/chrome-mcp/project-profiles/*
+!modules/chrome-mcp/project-profiles/README.md
