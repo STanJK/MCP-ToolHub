@@ -1,6 +1,6 @@
 # MCP-ToolHub
 
-A small local MCP capability broker for exposing selected workstation capabilities without turning the machine into a general-purpose remote shell. Current modules cover fixed local build operations, local MCP integrations for JLCEDA Pro, IDA Pro, and JADX, plus a remote Streamable HTTP MCP proxy with fixed static authentication.
+A small local MCP capability broker for exposing selected workstation capabilities without turning the machine into a general-purpose remote shell. Current modules cover fixed local build operations, local MCP integrations for JLCEDA Pro, IDA Pro, JADX and project-scoped Chrome DevTools, plus a remote Streamable HTTP MCP proxy with fixed local routing/authentication.
 
 ## Architecture
 
@@ -16,16 +16,16 @@ official openai/tunnel-client
         v
 MCP-ToolHub Core
         |
-        +---------------+---------------+---------------+---------------+
-        |               |               |               |               |
-        v               v               v               v               v
-   Local Build      JLCEDA Pro       IDA Pro          JADX         Remote MCP
-        |               |               |               |               |
- fixed project +   lceda-pro MCP   ida-pro-mcp    local HTTP      HTTPS + static
- fixed operation        |            stdio        MCP facade         headers
-        |               v               |               |               |
-        v          JLCEDA editor        v               v               v
- local toolchain                    IDA GUI         JADX GUI       remote server
+        +---------------+---------------+---------------+---------------+---------------+
+        |               |               |               |               |               |
+        v               v               v               v               v               v
+   Local Build      JLCEDA Pro       IDA Pro          JADX        Chrome MCP      Remote MCP
+        |               |               |               |               |               |
+ fixed project +   lceda-pro MCP   ida-pro-mcp    local HTTP    project profile   HTTPS + static
+ fixed operation        |            stdio        MCP facade   + DevTools stdio      routing
+        |               v               |               |               |               |
+        v          JLCEDA editor        v               v               v               v
+ local toolchain                    IDA GUI         JADX GUI       Chrome        remote server
 ```
 
 The tunnel layer is not reimplemented here. MCP-ToolHub uses OpenAI's official `openai/tunnel-client`.
@@ -547,6 +547,55 @@ Copy-Item .\modules\jadx-mcp\jadx-mcp.example.yaml `
 Then enable `modules.jadx-mcp` in `toolhub.local.yaml`.
 
 See `docs/JADX_MCP.md`.
+
+
+## Chrome DevTools MCP / project-scoped browser profiles
+
+ToolHub wraps the official `chrome-devtools-mcp` server behind a project-scoped
+facade:
+
+```text
+chrome_mcp_list_projects
+chrome_mcp_status
+chrome_mcp_start
+chrome_mcp_stop
+chrome_mcp_discover
+chrome_mcp_call
+```
+
+Each configured project receives a persistent Chrome user-data directory under:
+
+```text
+modules/chrome-mcp/project-profiles/<project-id>
+```
+
+ToolHub launches Chrome itself with a project-specific loopback remote-debugging
+port and `--user-data-dir`, then starts the upstream MCP server with
+`--browser-url`. This deliberately does not use `--autoConnect`, so project
+automation cannot silently attach to the normal personal Chrome profile.
+
+The remote caller can choose only a configured project and a permitted upstream
+tool. Browser executable, debugging port, profile path, filesystem roots and URL
+guardrails remain local static policy.
+
+Create the local config:
+
+```powershell
+Copy-Item .\modules\chrome-mcp\chrome-mcp.example.yaml `
+          .\modules\chrome-mcp\chrome-mcp.local.yaml
+```
+
+Then enable:
+
+```yaml
+modules:
+  chrome-mcp:
+    enabled: true
+    config: ./modules/chrome-mcp/chrome-mcp.local.yaml
+```
+
+See `docs/CHROME_MCP.md`.
+
 
 ## Remote MCP proxy
 
