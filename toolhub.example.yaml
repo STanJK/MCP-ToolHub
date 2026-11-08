@@ -23,6 +23,10 @@ modules:
     enabled: false
     config: ./modules/jadx-mcp/jadx-mcp.local.yaml
 
+  chrome-mcp:
+    enabled: false
+    config: ./modules/chrome-mcp/chrome-mcp.local.yaml
+
   remote-mcp:
     enabled: false
     config: ./modules/remote-mcp/remote-mcp.local.yaml
