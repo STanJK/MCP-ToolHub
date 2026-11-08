@@ -167,7 +167,8 @@ Current proxy modules:
 
 - `lceda-pro`: official JLCEDA Pro MCP child;
 - `ida-pro`: `mrexodia/ida-pro-mcp` stdio proxy for the legacy in-IDA GUI plugin;
-- `jadx-mcp`: loopback Streamable HTTP proxy for `0xdad0/jadx-mcp` running inside JADX GUI.
+- `jadx-mcp`: loopback Streamable HTTP proxy for `0xdad0/jadx-mcp` running inside JADX GUI;
+- `chrome-mcp`: project-scoped stdio proxy for the official Chrome DevTools MCP server, with ToolHub-owned Chrome remote-debugging/profile lifecycle.
 
 `lceda-pro` still mirrors its permitted upstream catalog at startup. `ida-pro` and `jadx-mcp` instead expose fixed facades and discover upstream schemas only on demand. Native MCP `CallToolResult` values are forwarded without translating backend content.
 
@@ -180,6 +181,23 @@ For `ida-pro`, the child `ida-pro-mcp` process uses upstream instance discovery 
 `jadx-mcp` uses the same fixed-facade principle for the local JADX GUI backend. Its endpoint is local configuration and is restricted to loopback hosts; `status / discover / call` are the only connector-visible actions.
 
 `remote-mcp` is reserved for remote Streamable HTTP servers. Server profiles, URLs, credentials, and allow/deny policy remain local configuration; `status / discover / call` are the only connector-visible actions. Upstream schemas are fetched only on demand.
+
+`chrome-mcp` keeps browser state isolated by project. Each configured project
+maps to a fixed persistent user-data directory under
+`modules/chrome-mcp/project-profiles/<project-id>` and a fixed loopback remote
+debugging port. ToolHub launches Chrome with those values, then launches the
+upstream stdio MCP server with `--browser-url`.
+
+The remote caller cannot choose the executable, port, profile path, filesystem
+roots, URL allow/block policy, or upstream process flags. Those remain local
+configuration. Extension/PWA/WebMCP/third-party/WebAuthn capabilities are
+hard-denied by the wrapper, and upstream config discovery is disabled so a
+global Chrome DevTools MCP config cannot override ToolHub policy.
+
+The child stdio environment is constructed from the MCP SDK's curated default
+environment rather than the complete ToolHub environment. This prevents
+unrelated parent credentials from being inherited by the Chrome DevTools MCP
+child.
 ## Credential state
 
 v0.1 intentionally permits:
