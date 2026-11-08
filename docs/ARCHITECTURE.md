@@ -1,212 +1,570 @@
-# Architecture
+# MCP-ToolHub V2 Architecture
 
-## Layers
+Status: **canonical top-level design draft**  
+Branch: `V2`  
+V1 archive: `deprecated/v1-2026-11-09/`
+
+## 1. Purpose
+
+MCP-ToolHub V2 is a personal capability control plane for exposing selected local and remote capabilities to an LLM-driven operator workflow without turning the LLM into an authority-bearing autonomous principal.
+
+The governing model is:
+
+> Human intent defines what should be done.  
+> The LLM may reason about and compose operations.  
+> Authority is defined outside the model and cannot be expanded by the model.
+
+V2 is not an enterprise IAM system, not an autonomous-agent platform, and not a general remote shell.
+
+Its job is narrower:
+
+- organize real workstation projects and downstream capability bindings;
+- let modules declare what they can do and how their capabilities can be constrained;
+- let the operator create reusable access profiles;
+- let the operator issue short-lived, revocable sessions to individual conversations or other clients;
+- keep secrets outside model-visible configuration and model-visible results;
+- execute only capabilities that survive the complete authorization chain;
+- keep a compact audit trail of authorization and execution.
+
+## 2. V1 archive and build isolation
+
+The complete V1 repository tree is preserved under:
 
 ```text
-OpenAI product
-    |
-    v
-OpenAI Secure MCP Tunnel
-    |
-    v
-official openai/tunnel-client
-    |
-    | stdio MCP
-    v
-ToolHub Core
-    |
-    | Module API v1
-    v
+deprecated/v1-2026-11-09/
+```
+
+The archive is historical source only.
+
+V2 root-level build tooling MUST NOT discover, compile, package, test, stage, or otherwise treat `deprecated/` as active source.
+
+During the architecture phase the V2 root intentionally contains no active V1 build manifest. Future V2 build systems MUST explicitly target V2 source directories and MUST exclude `deprecated/**`.
+
+No V2 module may import code from `deprecated/**`. Reuse requires an explicit port into the V2 source tree.
+
+## 3. Top-level user model
+
+The operator-facing model contains five primary concepts:
+
+```text
+Project
+Module
+Access Profile
+Session
+Secret Store
+```
+
+Capabilities are declared by Modules and selected by Access Profiles / Sessions.
+
+The normal human path is:
+
+```text
+Project
+  -> Access Profile
+      -> Session
+```
+
+Modules act as the capability library. Secret Store is system infrastructure.
+
+## 4. Project
+
+A Project is a human organizational object.
+
+It answers:
+
+> What am I working on, where does it live on the real machine, and which downstream capability objects belong to this work?
+
+A Project may contain:
+
+- a stable project ID;
+- display name and description;
+- working directory / workspace location;
+- optional human notes;
+- module bindings;
+- access profiles.
+
+Example:
+
+```text
+Project: EDU_PULSE
+WD: <local absolute path>
+
+Bindings:
+  Local Build -> EDU_PULSE
+  Chrome MCP  -> edu-pulse-dev
+  Remote MCP  -> cloudbase / edu-pulse-dev
+```
+
+### Project invariants
+
+A Project:
+
+- is NOT an authentication principal;
+- is NOT an authorization boundary by itself;
+- does NOT grant capabilities merely because a module is bound;
+- does NOT own secrets;
+- does NOT replace the upstream ChatGPT Project/context system.
+
+The upstream online harness remains responsible for its own project context. ToolHub only models the real-machine side needed to operate the project.
+
+A Session MAY eventually reference capabilities from more than one Project. The data model must therefore not assume that a Session is cryptographically or structurally owned by exactly one Project, even if the primary UI presents Sessions under a Project tree.
+
+## 5. Module
+
+A Module is a capability provider.
+
+Examples include:
+
+- Local Build;
+- Chrome MCP;
+- Remote MCP;
+- IDA;
+- JADX;
+- LcEDA;
+- future integrations.
+
+A Module owns the semantics of its own downstream system.
+
+ToolHub Core MUST NOT learn Chrome-specific URL semantics, database-specific write semantics, IDA-specific operation semantics, or other module-specific policy details.
+
+Each Module publishes a **Capability Catalog**.
+
+Conceptually:
+
+```text
+Module
+  -> Capability Catalog
+      -> Capability
+          -> optional constraint schema
+```
+
+Example:
+
+```text
+Chrome MCP
+  take_snapshot
+  navigate_page
+    constraints: URL scope
+  click
+  evaluate_script
+
+Remote MCP / CloudBase
+  queryPgDatabase
+    constraints: module-defined database/query restrictions
+
 Local Build
-    |
-    | bridge config
-    v
-project workspace + fixed operation
+  cargo-check
+  cargo-build
+  cargo-test
 ```
 
-MCP-ToolHub does not implement the tunnel protocol. Transport is delegated to OpenAI's official `openai/tunnel-client`.
+### Module responsibility
 
-## Configuration split
+A Module is responsible for:
 
-### ToolHub configuration
+- declaring capability IDs;
+- describing capabilities for the control panel;
+- declaring module-defined constraint schemas when needed;
+- translating a ToolHub request into its own downstream operation;
+- validating module-specific constraints before side effects;
+- enforcing its own hard capability boundary;
+- executing or delegating execution of an already-authorized request;
+- returning normalized results and module errors.
 
-`toolhub.local.yaml` owns:
+### Module non-responsibility
 
-- tunnel alias;
-- tunnel ID;
-- current raw runtime key;
-- enabled module registry;
-- each module's local config path.
+A Module does not own:
 
-It is local-only and gitignored.
+- Session token authentication;
+- Session expiry;
+- Session revocation;
+- Access Profile membership;
+- administrator authentication;
+- global audit identity;
+- cross-module authorization composition.
 
-### Module bridge configuration
+The principle is:
 
-Each module owns its own local configuration.
+> Core owns authority composition. Module owns capability semantics.
 
-For Local Build:
+## 6. Capability
+
+A Capability is the smallest operator-visible unit of authorization that a Module chooses to expose.
+
+Capability IDs must be stable within a Module version.
+
+Examples:
 
 ```text
-modules/local-build/local-build.local.yaml
+local-build / cargo-check
+chrome-mcp  / take_snapshot
+remote-mcp  / queryPgDatabase
 ```
 
-This file owns:
+A capability may define no constraints, or a module-defined set of constraints.
 
-- project IDs;
-- absolute workspace roots;
-- allowlisted operation IDs;
-- fixed executable;
-- fixed argv;
-- optional relative cwd;
-- timeout/output limits.
+ToolHub V2 deliberately does not introduce a global policy DSL in the first architecture.
 
-## Capability boundary
+Instead:
 
-Remote Local Build input is limited to:
+- simple modules may expose exact capabilities only;
+- complex modules may expose capability-specific constraint controls;
+- the control panel renders the constraint schema supplied by the module;
+- the module remains responsible for interpreting and enforcing those constraints.
 
-```json
-{
-  "project": "HalluCine",
-  "operation": "build"
-}
+This keeps complexity local to the module that creates it.
+
+## 7. Access Profile
+
+An Access Profile is a reusable operator-defined authorization template.
+
+It is normally created inside the human view of a Project.
+
+Example:
+
+```text
+Profile: normal-dev
+
+Local Build
+  [x] cargo-check
+  [x] cargo-build
+  [x] cargo-test
+  [ ] git-push
+
+Chrome
+  [x] take_snapshot
+  [x] click
+  [x] navigate_page
+  [ ] evaluate_script
+
+CloudBase
+  [x] queryPgDatabase
+  [ ] write operation
 ```
 
-The caller cannot directly choose:
+An Access Profile contains selections from Module Capability Catalogs plus any module-defined constraints.
 
-- executable;
-- argv;
-- shell text;
-- cwd;
-- environment variables;
-- project root.
+An Access Profile does not contain a bearer credential.
 
-The bridge resolves the pair locally and calls Node `spawn(..., { shell: false })`.
+### Profile revisions
 
-## Workspace boundary
+Profiles are revisioned.
 
-A project's root is absolute.
+A Session records the profile revision from which it was created.
 
-An operation may optionally provide a relative `cwd`. Before execution, Local Build resolves it against the project root and rejects any path that escapes the root.
+Changing a profile to a new revision MUST NOT silently grant newly-added authority to already-active Sessions.
 
-Therefore a bridge entry such as:
+Normal behavior:
+
+```text
+normal-dev@12
+  -> existing sessions remain on rev 12
+
+normal-dev edited
+  -> normal-dev@13
+  -> new sessions use rev 13
+```
+
+Security emergency changes, module hard-denies, global revocation, or module disablement may take effect immediately regardless of profile revision.
+
+## 8. Session
+
+A Session is a temporary authorization instance intended to be handed to one conversation or one client context.
+
+A Session contains at minimum:
+
+- session ID;
+- display name / human label;
+- credential verifier;
+- creation time;
+- expiry time;
+- status;
+- revocation state;
+- last-used time;
+- source Access Profile and profile revision;
+- optional per-session authorization delta.
+
+The credential is proof of the Session, not the authority definition itself.
+
+A Session token SHOULD be an opaque high-entropy bearer token. Only a verifier/hash is persisted. The plaintext token is shown once at creation and is not recoverable from ToolHub afterward.
+
+### Session states
+
+Minimum states:
+
+```text
+ACTIVE
+EXPIRED
+REVOKED
+```
+
+### Session delta
+
+A Session may temporarily differ from its source Access Profile.
+
+The UI must make this visible.
+
+Example:
+
+```text
+ChatGPT / database-inspection
+ACTIVE · expires 01:12:44
+MODIFIED
+  - chrome.click
+  + cloudbase.explain-query
+```
+
+A Session delta is not a hidden copy of the full profile. It represents the deliberate difference from the referenced profile revision.
+
+### No self-escalation
+
+A request using a Session cannot change:
+
+- its own grants;
+- its own expiry;
+- its source profile;
+- another Session;
+- secrets;
+- administrator state.
+
+A denied request is denied. The execution path does not present an automatic "Allow All" or model-triggered privilege-escalation path.
+
+Authority changes occur only through the Management Plane.
+
+## 9. Authorization composition
+
+The effective authorization for an operation is the intersection of independent boundaries.
+
+Conceptually:
+
+```text
+Module hard boundary
+        INTERSECT
+Access Profile revision
+        INTERSECT
+Session delta
+        =
+Session effective access
+```
+
+The operator UI may present this simply; the implementation must preserve the invariant.
+
+A Session can attenuate authority. It cannot create authority that the Module does not expose or that a higher boundary hard-denies.
+
+For a concrete request the flow is:
+
+```text
+1. Resolve Session.
+2. Resolve requested Module capability.
+3. Check Core-managed Session/Profile authorization.
+4. Check Module-managed capability constraints.
+5. Execute only if all checks allow.
+6. Audit the decision and result.
+```
+
+Authorization MUST complete before side effects.
+
+Unauthorized capabilities should not be advertised to that Session where practical. Discovery/catalog responses should be filtered by effective access rather than revealing a complete hidden tool surface.
+
+## 10. Secret Store
+
+Secret Store is independent infrastructure.
+
+Secrets are not owned by Projects, Access Profiles, or Sessions.
+
+A Session may receive permission to use a capability whose implementation requires a secret. This does not give the Session permission to read that secret.
+
+The intended model is:
+
+```text
+authorized capability
+  -> module execution
+      -> exact secret binding resolved internally
+          -> downstream system
+```
+
+The LLM/client must not receive raw secret values.
+
+### Namespace
+
+V2 uses the conceptual namespace:
+
+```text
+owner / scope / key
+```
+
+Examples:
+
+```text
+remote-mcp / cloudbase-account / tencent-secret-id
+remote-mcp / cloudbase-account / tencent-secret-key
+chrome-mcp / edu-pulse-dev / test-account-token
+core / tunnel-main / control-plane-api-key
+```
+
+Shared secrets require an explicit shared scope. There is no implicit "look in broader scope if missing" fallback.
+
+### Repository configuration
+
+Git-tracked configuration contains only a placeholder:
 
 ```yaml
-root: 'C:\Development\Example'
-cwd: app\gui
+secret_store:
+  root: '<自填>'
 ```
 
-is allowed, while absolute or parent-traversal cwd values that resolve outside the project root are rejected.
+No personal absolute Secret Store path is committed to the repository.
 
-## Runtime model
+The local operator may later configure a machine-specific path outside the repository.
 
-Local Build uses asynchronous in-process jobs.
+### V2 Windows direction
 
-`run` only starts the configured process and returns a `run_id`. The process may continue after that MCP request has completed. Clients use `get_run` to poll status/output and `cancel_run` to request termination.
+The intended Windows V2 storage backend is user-scoped protected storage, with DPAPI CurrentUser as the initial design direction.
 
-This deliberately separates:
+This is a local workstation boundary, not a defense against a process that has already fully compromised the same Windows user.
+
+## 11. Management Plane
+
+The Management Plane is for the human operator.
+
+It manages:
+
+- Projects;
+- module bindings;
+- Access Profiles;
+- profile revisions;
+- Sessions;
+- Session TTL;
+- Session revocation;
+- Session deltas;
+- Secret Store metadata and secret replacement;
+- audit inspection.
+
+Authority-expanding mutations require explicit administrator authentication / unlock.
+
+The initial target is local-only management on loopback plus CC integration compatibility.
+
+A future CC-level global authentication layer may provide trusted authentication context to ToolHub, but ToolHub retains capability authorization semantics.
+
+## 12. Execution Plane
+
+The Execution Plane is used by LLM clients and other callers.
+
+Its conceptual path is intentionally small:
 
 ```text
-Tunnel request lifetime
-!=
-local build/test process lifetime
+request
+  -> authenticate Session
+  -> determine requested capability
+  -> authorize against Profile + Session
+  -> validate module-specific constraints
+  -> execute
+  -> audit
+  -> return result
 ```
 
-Local Build allows at most one active job per project. Different projects may run concurrently.
+Implementation details such as process creation, worker queues, MCP child lifetimes, HTTP connection reuse, CDP sessions, retries, or pooling are below this architecture boundary.
 
-On Windows, cancellation terminates the full process tree with `taskkill /T /F`.
+The top-level architecture MUST NOT depend on any particular implementation of those details.
 
-Completed jobs are retained in memory for recent inspection; retained stdout/stderr stay bounded by the configured output limit.
+## 13. Audit
 
-Bridge YAML is read when a new operation is started, so project/operation edits take effect without restarting ToolHub.
+Audit is a cross-cutting Core service.
 
-## Builtin capability boundary
+At minimum the system should correlate:
 
-Most Local Build operations are fixed `program + args` mappings. A builtin is permitted only when its semantics need multiple fail-closed checks that cannot be represented safely as one process invocation.
+- timestamp;
+- Session ID;
+- Project context when applicable;
+- Module;
+- capability;
+- allow/deny decision;
+- result class;
+- duration;
+- error class when present.
 
-The first builtin is `git-sync-generated`. Its semantics are intentionally fixed in code:
+Secret values, authorization tokens, and unnecessarily sensitive payloads must not be logged.
 
-- remote: `origin`;
-- branch: `main`;
-- generated file: `Cargo.lock`;
-- no staged changes;
-- no other visible worktree changes;
-- only fast-forward synchronization;
-- incoming remote state must itself modify `Cargo.lock`;
-- final worktree must be clean.
+The audit model should make it possible to answer:
 
-The builtin accepts no remote path, command, branch, remote, or file argument. YAML may only opt a project into that exact capability with `builtin: git-sync-generated`.
+> Which Session used which capability, when, and with what result?
 
-Cargo verification operations should use `--locked` so normal check/build/test execution never rewrites dependency resolution state.
+without reconstructing events from unrelated module logs.
 
-## Module failure isolation
+## 14. Control Center boundary
 
-Enabled modules are independent fault domains.
-
-ToolHub Core treats top-level configuration parsing as fatal, but a failure inside one enabled module does not prevent the MCP server from being created. Per-module failures are recorded with a stage:
+Current phase:
 
 ```text
-registration
-import
-factory
-describe
-contract
+CC
+  -> hosting / lifecycle / transport integration
+  -> ToolHub authentication and authorization
 ```
 
-A degraded module is omitted from the current MCP tool catalog while healthy modules continue to register normally. Core logs the failure and exposes `toolhub_module_status` so callers can inspect ready/degraded modules without depending on the failed backend.
+Future direction:
 
-This is particularly important for optional child backends such as IDA Pro or JLCEDA Pro: IDA not running, an editor bridge being offline, or a remote MCP being temporarily unavailable must not take Local Build or unrelated modules down with it.
-
-Invalid action IDs or invalid per-action schemas are likewise skipped at action-registration time instead of aborting the whole ToolHub server.
-
-Because proxy tool catalogs are discovered at server construction time, bringing a degraded backend online later may require a ToolHub/connector refresh before its tools reappear.
-## Child MCP proxy modules
-
-ToolHub can aggregate trusted local or remote MCP servers through module-specific clients.
-
-Current proxy modules:
-
-- `lceda-pro`: official JLCEDA Pro MCP child;
-- `ida-pro`: `mrexodia/ida-pro-mcp` stdio proxy for the legacy in-IDA GUI plugin;
-- `jadx-mcp`: loopback Streamable HTTP proxy for `0xdad0/jadx-mcp` running inside JADX GUI;
-- `chrome-mcp`: project-scoped stdio proxy for the official Chrome DevTools MCP server, with ToolHub-owned Chrome remote-debugging/profile lifecycle.
-
-`lceda-pro` still mirrors its permitted upstream catalog at startup. `ida-pro` and `jadx-mcp` instead expose fixed facades and discover upstream schemas only on demand. Native MCP `CallToolResult` values are forwarded without translating backend content.
-
-The executable, argv, and allow/deny policy are local configuration. Remote callers can invoke only the mirrored tool names and cannot alter the child process command line.
-
-Each proxy keeps one process-global child runtime per effective local configuration so repeated ToolHub server factories do not spawn duplicate child MCP processes.
-
-For `ida-pro`, the child `ida-pro-mcp` process uses upstream instance discovery and proxies requests into the MCP server hosted by the running IDA GUI plugin. ToolHub does not parse Hex-Rays discovery files or speak the plugin's HTTP protocol directly. Unlike ordinary mirroring proxies, IDA is exposed through a fixed `status / discover / call` facade so the connector does not carry the full upstream schema set on every turn and the catalog remains stable when IDA opens or closes.
-
-`jadx-mcp` uses the same fixed-facade principle for the local JADX GUI backend. Its endpoint is local configuration and is restricted to loopback hosts; `status / discover / call` are the only connector-visible actions.
-
-`remote-mcp` is reserved for remote Streamable HTTP servers. Server profiles, URLs, credentials, and allow/deny policy remain local configuration; `status / discover / call` are the only connector-visible actions. Upstream schemas are fetched only on demand.
-
-`chrome-mcp` keeps browser state isolated by project. Each configured project
-maps to a fixed persistent user-data directory under
-`modules/chrome-mcp/project-profiles/<project-id>` and a fixed loopback remote
-debugging port. ToolHub launches Chrome with those values, then launches the
-upstream stdio MCP server with `--browser-url`.
-
-The remote caller cannot choose the executable, port, profile path, filesystem
-roots, URL allow/block policy, or upstream process flags. Those remain local
-configuration. Extension/PWA/WebMCP/third-party/WebAuthn capabilities are
-hard-denied by the wrapper, and upstream config discovery is disabled so a
-global Chrome DevTools MCP config cannot override ToolHub policy.
-
-The child stdio environment is constructed from the MCP SDK's curated default
-environment rather than the complete ToolHub environment. This prevents
-unrelated parent credentials from being inherited by the Chrome DevTools MCP
-child.
-## Credential state
-
-v0.1 intentionally permits:
-
-```yaml
-tunnel:
-  raw_key: sk-...
+```text
+CC
+  -> global authentication / trusted caller context
+  -> ToolHub capability authorization
 ```
 
-inside the local gitignored ToolHub config.
+CC should not need to understand Chrome operations, database query semantics, IDA semantics, or other Module-specific capability rules.
 
-A later credential-provider layer can replace this field without changing Module API v1 or Local Build bridge semantics.
+## 15. Architecture invariants
+
+The following are V2 top-level invariants:
+
+1. **Automate execution, not authority.**
+2. **Project is organizational context, not a security principal.**
+3. **A Module defines capability semantics; Core composes authority.**
+4. **A Session cannot expand its own authority.**
+5. **A denied request does not automatically open an elevation flow.**
+6. **Secrets are execution dependencies, never Session-readable data.**
+7. **Module hard boundaries override Profile and Session configuration.**
+8. **Profile changes do not silently broaden existing Sessions.**
+9. **Authorization completes before side effects.**
+10. **The active V2 build never consumes `deprecated/**`.**
+11. **Implementation complexity stays below the top-level architecture boundary.**
+12. **Complexity belongs to the Module that creates it.**
+
+## 16. Deliberate non-goals for the first V2 implementation
+
+V2 does not initially require:
+
+- enterprise tenants;
+- organizations or department hierarchy;
+- SAML;
+- SCIM;
+- a general ABAC language;
+- OPA/Cedar policy deployment;
+- PKI-based workload identity;
+- an OAuth authorization server implemented by ToolHub;
+- automatic model-driven privilege escalation;
+- a general-purpose remote shell;
+- a universal Module constraint DSL.
+
+These may be reconsidered only when a real use case requires them.
+
+## 17. Canonical operator view
+
+The intended default control-panel hierarchy is:
+
+```text
+Project
+  |
+  +-- Module Bindings
+  |
+  +-- Access Profiles
+       |
+       +-- normal-dev
+       |    +-- Session A  ACTIVE
+       |    +-- Session B  ACTIVE · MODIFIED
+       |
+       +-- inspect-only
+            +-- Session C  REVOKED
+```
+
+Module catalogs and Secret Store remain available as system-level views.
+
+The operator should not need to reason about process topology, worker ownership, transport lifetime, queue topology, or child-process reuse to understand or administer authority.
