@@ -1,0 +1,79 @@
+version: 1
+
+# Chrome is launched by ToolHub itself. The upstream chrome-devtools-mcp process
+# connects to that browser through --browser-url.
+chrome:
+  executable: 'C:\Program Files\Google\Chrome\Application\chrome.exe'
+
+# Your current Windows Node/npm installation.
+mcp:
+  command: 'C:\Program Files\nodejs\npx.cmd'
+  args:
+    - -y
+    - chrome-devtools-mcp@latest
+    - --no-usage-statistics
+    - --no-performance-crux
+    - --redact-network-headers
+
+startup_timeout_ms: 20000
+
+# Each project ID maps to:
+#   modules/chrome-mcp/project-profiles/<project-id>
+#
+# The profile directory is deliberately NOT configurable by the remote caller.
+# Give every enabled project a unique loopback debugging port.
+projects:
+  example-project:
+    enabled: true
+    remote_debugging_port: 9223
+
+    # Set false to remove caller-provided JS evaluation entry points upstream.
+    javascript_evaluation: true
+
+    # Optional filesystem roots for screenshot/trace/file tools.
+    # With an empty list, chrome-devtools-mcp keeps its normal temp-directory restriction.
+    workspace_roots: []
+
+    # Optional network guardrail. Use one side or the other, never both.
+    # Chrome 157 supports allowed_url_patterns.
+    allowed_url_patterns: []
+    blocked_url_patterns: []
+
+    # Explicit ToolHub allowlist. Upstream tools not listed here are invisible.
+    # Extension, PWA, WebMCP, third-party and WebAuthn tools are hard-denied
+    # by ToolHub even if '*' is used.
+    allow_tools:
+      - list_pages
+      - new_page
+      - select_page
+      - close_page
+      - navigate_page
+      - wait_for
+      - take_snapshot
+      - take_screenshot
+      - click
+      - click_at
+      - drag
+      - fill
+      - fill_form
+      - handle_dialog
+      - hover
+      - press_key
+      - type_text
+      - emulate
+      - resize_page
+      - list_console_messages
+      - get_console_message
+      - get_css_styles
+      - evaluate_script
+      - set_logpoints
+      - list_network_requests
+      - get_network_request
+      - lighthouse_audit
+      - performance_start_trace
+      - performance_stop_trace
+      - performance_analyze_insight
+      - screencast_start
+      - screencast_stop
+
+    deny_tools: []
