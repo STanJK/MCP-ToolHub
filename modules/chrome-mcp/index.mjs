@@ -161,13 +161,12 @@ async function loadConfig(configPath) {
     throw new Error("chrome-mcp config requires mcp.command");
   }
   const mcpBaseArgs = validateStringArray("chrome-mcp mcp.args", mcp.args ?? []);
-  if (
-    mcpBaseArgs.some((arg) =>
-      /^(?:--auto-?connect|--browser-?url|--ws-?endpoint|--user-?data-?dir)(?:=|$)/i.test(arg)
-    )
-  ) {
+  const forbiddenManagedArg =
+    /^(?:--auto-?connect|--browser-?url|--ws-?endpoint|--ws-?headers|--user-?data-?dir|--channel|--executable-?path|--isolated|--headless|--proxy-?server|--chrome-?arg|--ignore-?default-?chrome-?arg|--viewport|--config|--watch-?config|--allow-?unrestricted-?paths|--filesystem-?root|--workspace|--allowed-?url-?pattern|--blocked-?url-?pattern|--javascript-?evaluation|--accept-?insecure-?certs|--category-?extensions|--category-?experimental-?third-?party|--category-?experimental-?webmcp|--category-?pwa|--category-?webauthn)(?:=|$)/i;
+  const forbiddenArg = mcpBaseArgs.find((arg) => forbiddenManagedArg.test(arg));
+  if (forbiddenArg) {
     throw new Error(
-      "chrome-mcp mcp.args must not set connection/profile flags; ToolHub owns browserUrl and user-data-dir routing"
+      `chrome-mcp mcp.args contains ToolHub-managed security/browser flag: ${forbiddenArg}`
     );
   }
 
