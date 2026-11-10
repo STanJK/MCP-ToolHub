@@ -14,7 +14,8 @@
     "setup:dsh-test": "node ./scripts/add-dsh-test-local-build.mjs",
     "setup:dsh-skill": "node ./scripts/install-dsh-toolhub-skill.mjs",
     "setup:local-build-project": "node ./scripts/add-standard-local-build-project.mjs",
-    "cc:build": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./scripts/build-cc-module.ps1"
+    "cc:build": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./scripts/build-cc-module.ps1",
+    "test:local-build": "node --test ./tests/local-build-list-directory.test.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/server": "^2.3.1",

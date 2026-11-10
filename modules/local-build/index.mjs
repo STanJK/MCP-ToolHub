@@ -7,6 +7,7 @@ import { parse } from "yaml";
 import { z } from "zod";
 import { runGitSyncGenerated } from "./builtins/git-sync-generated.mjs";
 import { runCargoInitRust } from "./builtins/cargo-init-rust.mjs";
+import { listProjectDirectory } from "./directory-listing.mjs";
 
 const jobs = new Map();
 const activeJobByProject = new Map();
@@ -512,6 +513,15 @@ export default async function createLocalBuildModule({ moduleId, configPath }) {
             inputSchema: { project: z.string().min(1) }
           },
           {
+            id: "list_directory",
+            title: "List Local Build project directory",
+            description: "Lists one directory inside an allowlisted Local Build project root.",
+            inputSchema: {
+              project: z.string().min(1),
+              path: z.string().optional()
+            }
+          },
+          {
             id: "run",
             title: "Start Local Build operation",
             description: "Starts one preconfigured operation and returns immediately with a run_id.",
@@ -603,6 +613,15 @@ export default async function createLocalBuildModule({ moduleId, configPath }) {
             description: operation.description ?? ""
           }))
         };
+      }
+
+      if (action === "list_directory") {
+        const project = getProject(config, input.project);
+        return listProjectDirectory({
+          projectId: input.project,
+          project,
+          requestedPath: input.path ?? "."
+        });
       }
 
       if (action === "run") {

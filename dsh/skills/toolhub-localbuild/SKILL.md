@@ -13,6 +13,7 @@ Use the `mcp__toolhub__local_build_*` tools for project build lifecycle work:
 
 - `local_build_list_projects`
 - `local_build_list_operations`
+- `local_build_list_directory`
 - `local_build_run`
 - `local_build_get_run`
 - `local_build_list_runs`
@@ -28,6 +29,19 @@ Do not use `pwsh` for a build, check, test, lockfile, or other operation when an
 4. Never invent an operation name.
 
 If a required operation is absent, stop and report the missing capability instead of falling back to arbitrary shell execution.
+
+## Workspace directory browsing
+
+Use `local_build_list_directory` when the task needs to inspect the directory structure of a configured project, including Git-ignored local asset trees.
+
+- `path` is relative to the configured project root and defaults to `.`.
+- Browse one directory at a time; the action is non-recursive.
+- Results contain only names, entry type, and file size metadata.
+- At most 500 entries are returned; `truncated: true` means the directory is larger.
+- The action never returns file contents.
+- Absolute paths, path traversal outside the workspace, and symlink/junction escapes outside the real project root are refused.
+- Do not fall back to shell `dir`, `ls`, `find`, or PowerShell filesystem enumeration when this action can satisfy the request.
+- Directory listing does not consume the Local Build active-run slot and may be used while a build/test run is active.
 
 ## Fresh Rust projects
 

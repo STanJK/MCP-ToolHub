@@ -183,10 +183,30 @@ The module exposes:
 
 - `local_build_list_projects`
 - `local_build_list_operations`
+- `local_build_list_directory`
 - `local_build_run`
 - `local_build_get_run`
 - `local_build_list_runs`
 - `local_build_cancel_run`
+
+### Workspace directory browsing
+
+`local_build_list_directory` lists one directory inside a configured Local Build project root. It is intended for browsing real local workspace structure, including Git-ignored asset directories, without exposing arbitrary filesystem access or file contents.
+
+Example:
+
+```json
+{
+  "project": "To-Serve",
+  "path": "assets/quarry"
+}
+```
+
+The path is workspace-relative only. Absolute paths are refused, lexical traversal outside the project root is refused, and the target is checked again through `realpath` so symlinks or Windows junctions cannot be used to escape the real project root.
+
+The action is read-only and non-recursive. It returns only lightweight entry metadata, sorts directories before files with stable case-insensitive name ordering, and returns at most 500 entries with `truncated: true` when the directory is larger. It never returns file contents, absolute paths, ACL/owner metadata, or shell output.
+
+Directory listing is a direct metadata query. It does not spawn a child process, create a `run_id`, or participate in the per-project active run lock, so it remains available while a build/test operation is running.
 
 `local_build_run` starts a configured operation and returns immediately with a `run_id`:
 
