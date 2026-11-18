@@ -100,3 +100,11 @@ The remote model cannot change the child executable, MCP arguments, or allow/den
 - Project writes should remain inside configured EasyEDA/JLCEDA project directories.
 - The official workflow requires checking the top-level `ok` result after key editor commands.
 - Tool discovery is startup-time. After upgrading JLCEDA Pro or changing tool policy, restart ToolHub and refresh the ChatGPT connector.
+
+## Returning schematic images to ChatGPT through ToolHub
+
+A verified JLCEDA Pro V4.1.78 workflow (2026-11-18) exports the current schematic's pages with `eda.sch_ManufactureData.getPngFile()`, reads the returned PNG or multi-page ZIP in the editor-side `invoke` script, selects a PNG, and returns its bytes as Base64 in the MCP JSON result. A ChatGPT `functions.exec` caller can then render it with `image("data:image/png;base64," + b64, "original")` for visual inspection.
+
+The workflow needs no public image URL or separate image-upload service. It is **not** a desktop screenshot API, does **not** prove electrical connectivity merely by rendering an image, and remains subject to MCP payload/timeout limits and editor invocation permissions.
+
+See **[docs/JLCEDA_IMAGE_RETURN.md](JLCEDA_IMAGE_RETURN.md)** for a complete call sequence, an end-to-end executable example, ZIP handling, verified test observations, and troubleshooting.
